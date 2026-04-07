@@ -1,0 +1,18 @@
+{
+    "constriction": {
+        "threshold": 0.75,
+        "short_constr_dur": 0.5,
+        "long_constr_dur": 3.0,
+        "gp3_fps": 60,
+        "pupilcore_fps": 125
+    },
+    "yn_widget": {
+        "scan_interval_dur": 3.5,
+        "cooldown_dur": 2.0,
+        "initialization_dur": 3.0
+    },
+    "gui": {
+        "scan_interval_dur": 3.5,
+        "initialization_dur": 3.0
+    }
+}
