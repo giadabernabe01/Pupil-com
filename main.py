@@ -590,6 +590,7 @@ class MainWindow(QtWidgets.QMainWindow):
             HelperClasses.set_session_drive_folder(new_drive_id)
             print("Drive folder created successfully!")
         except Exception as e:
+            print(f"Could not create Drive folder (No internet?). Using main folder. Error: {e}")
             HelperClasses.set_session_drive_folder(HelperClasses.MAIN_DRIVE_FOLDER_ID)
 
         self.initialize_application()
