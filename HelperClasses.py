@@ -14,6 +14,13 @@ MAIN_DRIVE_FOLDER_ID = "1VpNhj7DEMyA-NYGaMWn8563J0OqrOgbM"
 
 CURRENT_SESSION_DRIVE_FOLDER_ID = MAIN_DRIVE_FOLDER_ID
 
+def get_local_results_path():
+    """Ensures the 'Experimental Results' folder exists locally."""
+    base_path = "Experimental_Results"
+    if not os.path.exists(base_path):
+        os.makedirs(base_path)
+    return base_path
+
 def set_session_drive_folder(folder_id):
     """Updates the target Drive folder for the current session."""
     global CURRENT_SESSION_DRIVE_FOLDER_ID

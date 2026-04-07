@@ -549,21 +549,20 @@ class MainWindow(QtWidgets.QMainWindow):
     def setup_subject_session(self, subject_name, device_type):
         """Called when user enters a name"""
         self.selected_device = device_type
-        if self.selected_device == "gazepoint":
-            self.params["active_fps"] = self.params["constriction"].get("gp3_fps", 60)
-            device_suffix = "GP3"
-        else:
-            self.params["active_fps"] = self.params["constriction"].get("pupilcore_fps", 125)
-            device_suffix = "PL"
+        device_suffix = "GP3" if device_type == "gazepoint" else "PL"
 
-        cwd = os.getcwd()
-        base_folder_name = get_subject_folder_name(cwd, subject_name)
-
+        # --- NEW LOGIC ---
+        parent_path = HelperClasses.get_local_results_path()
+        # Scan for existing folders inside the Experimental Results folder
+        base_folder_name = get_subject_folder_name(parent_path, subject_name)
+        
         folder_name = f"{base_folder_name}_{device_suffix}"
-        self.session_folder = os.path.join(cwd, folder_name)
+        # Set the local path inside the parent folder
+        self.session_folder = os.path.join(parent_path, folder_name)
+        # -----------------
 
         try:
-            print(f"Creating Drive folder for {folder_name}...")
+            # Create the sub-folder on Drive inside the 'Experimental Results' folder
             new_drive_id = create_drive_folder(folder_name, parent_id=HelperClasses.MAIN_DRIVE_FOLDER_ID)
             HelperClasses.set_session_drive_folder(new_drive_id)
             print("Drive folder created successfully!")
@@ -576,16 +575,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def setup_anonymous_session(self, device_type):
         # Create session folder
         self.selected_device = device_type
-        if self.selected_device == "gazepoint":
-            self.params["active_fps"] = self.params["constriction"].get("gp3_fps", 60)
-            device_suffix = "GP3"
-        else:
-            self.params["active_fps"] = self.params["constriction"].get("pupilcore_fps", 125)
-            device_suffix = "PL"
+        device_suffix = "GP3" if device_type == "gazepoint" else "PL"
 
+        # --- NEW LOGIC ---
+        parent_path = HelperClasses.get_local_results_path()
         now_str = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
         folder_name = f"{now_str}_{device_suffix}"
-        self.session_folder = os.path.join(os.getcwd(), folder_name)
+        self.session_folder = os.path.join(parent_path, folder_name)
+        # -----------------
 
         try:
             print(f"Creating Drive folder for {folder_name}...")
@@ -593,7 +590,6 @@ class MainWindow(QtWidgets.QMainWindow):
             HelperClasses.set_session_drive_folder(new_drive_id)
             print("Drive folder created successfully!")
         except Exception as e:
-            print(f"Could not create Drive folder (No internet?). Using main folder. Error: {e}")
             HelperClasses.set_session_drive_folder(HelperClasses.MAIN_DRIVE_FOLDER_ID)
 
         self.initialize_application()
