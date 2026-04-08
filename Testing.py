@@ -54,6 +54,11 @@ class TestingWidget(QtWidgets.QWidget):
         self.message.setAlignment(QtCore.Qt.AlignCenter)
         self.layout.addWidget(self.message)
 
+        self.gaze_warning_label = QtWidgets.QLabel("")
+        self.gaze_warning_label.setStyleSheet("color: #ff4444; font-size: 20px; font-weight: bold;")
+        self.gaze_warning_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.layout.addWidget(self.gaze_warning_label)
+
         # Results plot
         self.plot_image_label = QtWidgets.QLabel()
         self.plot_image_label.setAlignment(QtCore.Qt.AlignCenter)
@@ -184,6 +189,14 @@ class TestingWidget(QtWidgets.QWidget):
         self.filtered_data_history = []
         self.timestamps_history = []
 
+        self.baseline_x = []
+        self.baseline_y = []
+        self.center_x = 0.5
+        self.center_y = 0.5
+        self.gaze_tolerance = 0.15 # Default fallback
+        if hasattr(self, 'gaze_warning_label'):
+            self.gaze_warning_label.setText("")
+
     def start_testing_sequence(self):
         """Triggered by the start button"""
         if self.logger is None and self.folder_path:
@@ -210,7 +223,7 @@ class TestingWidget(QtWidgets.QWidget):
         player.setVolume(100) # Unmute now
         player.play()
 
-    def update_data(self, raw_area):
+    def update_data(self, raw_area, raw_x=0, raw_y=0):
         """Main Loop called by Main Window"""
         frame_instruction_code = 0
         area = self.filter.area_filtering(raw_area)
@@ -238,8 +251,23 @@ class TestingWidget(QtWidgets.QWidget):
 
         elif self.state == "BASELINE":
             self.monitor.baseline_collection(raw_area)
+            if raw_x != 0 and raw_y != 0:
+                self.baseline_x.append(raw_x)
+                self.baseline_y.append(raw_y)
             if elapsed > self.t_init:
                 if self.logger: self.logger.log("Baseline Collected")
+                if len(self.baseline_x) > 0:
+                    self.center_x = np.mean(self.baseline_x)
+                    self.center_y = np.mean(self.baseline_y)
+                    
+                    # Calculate distances from the new center
+                    distances = [np.sqrt((x - self.center_x)**2 + (y - self.center_y)**2) 
+                                 for x, y in zip(self.baseline_x, self.baseline_y)]
+                    
+                    # Tolerance is 3*std. (We add a 0.05 minimum fallback in case they stare perfectly still)
+                    self.gaze_tolerance = max(0.15, 3 * np.std(distances))
+                    if self.logger: 
+                        self.logger.log(f"Gaze Center: ({self.center_x:.2f}, {self.center_y:.2f}) | Tolerance: {self.gaze_tolerance:.3f}")
                 self.next_trial()
 
         elif self.state == "INSTRUCTION_NEAR":
@@ -298,15 +326,28 @@ class TestingWidget(QtWidgets.QWidget):
                 else:
                     self.next_trial()
 
-
-        # ---> BUG FIX: SAVE DATA CONTINUOUSLY OUTSIDE THE STATE MACHINE <---
+        if self.state not in ["IDLE", "BASELINE", "FINISHED", "COMPLETED_IDLE"]:
+            if raw_x != 0 and raw_y != 0:
+                current_dist = np.sqrt((raw_x - self.center_x)**2 + (raw_y - self.center_y)**2)
+                
+                if current_dist > self.gaze_tolerance:
+                    self.gaze_warning_label.setText("⚠ SGUARDO FUORI CENTRO ⚠")
+                    #if self.logger: self.logger.log("Warning: Gaze deviated from center")
+                else:
+                    self.gaze_warning_label.setText("")
+            else:
+                self.gaze_warning_label.setText("⚠ OCCHIO NON RILEVATO ⚠")
+        
         if self.saver and self.state not in ["FINISHED", "COMPLETED_IDLE"]:
             self.saver.add_data(
                 raw_area, 
                 val, 
                 current_thresh, 
                 status, 
-                frame_instruction_code 
+                frame_instruction_code,
+                #extra_value="", # Leave blank if unused
+                gaze_x=raw_x,   # Pass X coordinate
+                gaze_y=raw_y    # Pass Y coordinate 
             )
 
         # Handle the shutdown independently so it doesn't block the saver

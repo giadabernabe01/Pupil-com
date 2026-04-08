@@ -432,7 +432,7 @@ class KeyboardApp(QWidget):
         if self.state == "INITIALIZATION":
             self.log_once("Initialization Started")
             self.monitor.baseline_collection(raw_area)
-            if time.time() - self.state_start_time >= 5.0:
+            if time.time() - self.state_start_time >= self.t_init:
                 self.state = "KEYBOARD_ROW"
                 self.current_row_idx = -1
                 self.scan_start_time = time.time()

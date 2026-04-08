@@ -119,7 +119,7 @@ class DataSaver:
         self.data_rows = []
         self.start_time = time.time()
 
-    def add_data(self, raw, filtered, threshold, event_code, extra_value=""):
+    def add_data(self, raw, filtered, threshold, event_code, extra_value="", gaze_x=None, gaze_y=None):
         """Call this every frame to record a data point."""
         timestamp = time.time()
 
@@ -131,6 +131,9 @@ class DataSaver:
             event_code, 
             extra_value        
         ]
+
+        if gaze_x is not None and gaze_y is not None:
+            row.extend([f"{gaze_x:.4f}", f"{gaze_y:.4f}"])
         
         self.data_rows.append(row)
 
@@ -145,6 +148,9 @@ class DataSaver:
 
         header = ["Timestamp", "Raw_Area", "Filtered_Area", "Threshold", "Event_Code", extra_column_name]
         
+        if len(self.data_rows[0]) > 6:
+            header.extend(["Gaze_X", "Gaze_Y"])
+            
         try:
             with open(save_path, mode='w', newline='') as f:
                 writer = csv.writer(f)

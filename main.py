@@ -731,19 +731,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def dispatch_data(self, data_tuple):
         # Unpack the tuple we just created in the receiver
-        area, x, y = data_tuple
+        if not isinstance(data_tuple, (tuple, list)):
+            area = data_tuple
+            x, y = 0.0, 0.0
+        else:
+            area, x, y = data_tuple
         
         current_widget = self.stack.currentWidget() 
         if hasattr(current_widget, 'update_data'):
-            if isinstance(current_widget, GameWidget):
-                current_widget.receiver = self.receiver 
-            
-            # Safely pass coordinates ONLY if the widget is the TestingWidget
+            # Pass coordinates to TestingWidget
             if isinstance(current_widget, TestingWidget):
-                current_widget.update_data(area)
-                #current_widget.update_data(area, raw_x=x, raw_y=y)
+                current_widget.update_data(area, raw_x=x, raw_y=y)
             else:
-                # For all other widgets (Menu, Game, etc), just pass the area like normal!
+                # Everything else only gets area
                 current_widget.update_data(area)
 
     def merge_session_csvs(self):

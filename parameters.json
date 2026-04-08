@@ -1,7 +1,7 @@
 {
     "constriction": {
         "threshold": 0.75,
-        "short_constr_dur": 0.5,
+        "short_constr_dur": 0.4,
         "long_constr_dur": 3.0,
         "gp3_fps": 60,
         "pupilcore_fps": 125
@@ -14,5 +14,30 @@
     "gui": {
         "scan_interval_dur": 3.5,
         "initialization_dur": 3.0
+    },
+    "keyboard_widget": {
+        "max_loops": 2,
+        "scan_interval_dur": 3.0,
+        "initialization_dur": 2.5,
+        "cooldown_dur": 2.0,
+        "extra_trigger_dur": 5.0
+    },
+    "testing_widget": {
+        "short_task_dur": 2.0,
+        "long_task_dur": 5.0,
+        "far_interval_dur": 3.0,
+        "initialization_dur": 5.0
+    },
+    "game_widget": {
+        "shuttle_speed": 1,
+        "planet_speed_base": 7.0,
+        "lives": 5,
+        "cooldown_dur": 2.0,
+        "initialization_dur": 3.0
+    },
+    "calibration_widget": {
+        "max_loops": 3,
+        "initialization_dur": 2.0,
+        "task_dur": 4.0
     }
 }

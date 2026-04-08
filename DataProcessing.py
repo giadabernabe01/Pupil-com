@@ -34,10 +34,10 @@ class AreaFilter:
         self.pupil_areas_ebf = deque(maxlen=self.max_array_len)
         self.pupil_areas_fin = deque(maxlen=self.max_array_len)
 
+        self.reject_count = 0
+
     def area_filtering(self, new_area):
         self.pupil_areas_raw.append(new_area)
-        #if len(self.pupil_areas_raw) > self.max_array_len: self.pupil_areas_raw.pop(0)
-
         # Control on the pupil area with respect to physiological dimensions
         if self.amin <= new_area <= self.amax:
             self.pupil_areas.append(new_area)
@@ -59,8 +59,21 @@ class AreaFilter:
                     recent_diffs = list(self.pupil_areas_diffs)[:-1][-win_len:]
                     baseline = np.mean(recent_diffs)
                     if diff > self.ebf_thresh + baseline:
-                        self.pupil_areas_ebf[-1] = self.pupil_areas_ebf[-2]
-                        self.pupil_areas_diffs[-1] = baseline
+                        self.reject_count += 1
+                        
+                        # Max allowed consecutive rejected frames (0.5 seconds)
+                        max_rejects = int(self.fps / 2) 
+                        
+                        if self.reject_count < max_rejects:
+                            # It's a short spike/blink. Reject it and hold the old value.
+                            self.pupil_areas_ebf[-1] = self.pupil_areas_ebf[-2]
+                            self.pupil_areas_diffs[-1] = baseline
+                        else:
+                            # Accept the new low value and reset the counter.
+                            self.reject_count = 0
+                    else:
+                        # Normal physiological movement. Accept and reset counter.
+                        self.reject_count = 0
                 
             # moving average
             ma_win = int(self.fps / 2)
@@ -331,7 +344,14 @@ class PupilLabsReceiver(QtCore.QThread):
                     d = latest_msg.get("diameter", None)
                     if d is not None:
                         area = np.pi * (float(d)/2)**2
-                        self.data_queue.put(area)
+                        #self.data_queue.put(area)
+                    else:
+                        area = 0.0
+                    norm_pos = latest_msg.get("norm_pos", [0.0, 0.0])
+                    px = norm_pos[0]
+                    py = norm_pos[1]
+                    
+                    self.data_queue.put((area, px, py))
             except zmq.Again:
                 pass # Normal timeout
             except Exception as e:
