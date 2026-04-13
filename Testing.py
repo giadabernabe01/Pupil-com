@@ -8,6 +8,7 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore import QUrl
 from DataProcessing import AreaFilter, ConstrictionMonitor, GazepointReceiver
 from HelperClasses import SessionLogger, DataPlotter, DataSaver
+from DigitalEye import DigitalEyeWidget
 
 class TestingWidget(QtWidgets.QWidget):
     go_back_signal = QtCore.pyqtSignal()
@@ -45,7 +46,12 @@ class TestingWidget(QtWidgets.QWidget):
         title.setStyleSheet("font-size: 24px; font-weight: bold;")
         self.layout.addWidget(title)
 
+        # Digital eye twin
+        self.digital_eye = DigitalEyeWidget()
+        self.layout.addWidget(self.digital_eye)
+
         self.area_label = QtWidgets.QLabel("Area registrata: 0.0")
+        self.area_label.setStyleSheet("color: #888888; font-size: 14px;") # De-emphasized
         self.layout.addWidget(self.area_label)
 
         # Dynamic instruction label
@@ -100,6 +106,8 @@ class TestingWidget(QtWidgets.QWidget):
         self.timestamps_history = []
 
         self.folder_path = ""
+
+    
 
     def start_session(self, folder_path, params, device_type):
         """Called by MainWindow when entering this screen"""
@@ -196,6 +204,8 @@ class TestingWidget(QtWidgets.QWidget):
         self.gaze_tolerance = 0.15 # Default fallback
         if hasattr(self, 'gaze_warning_label'):
             self.gaze_warning_label.setText("")
+        self.is_gaze_deviated = False
+        self.gaze_dev_start_time = 0.0
 
     def start_testing_sequence(self):
         """Triggered by the start button"""
@@ -229,6 +239,7 @@ class TestingWidget(QtWidgets.QWidget):
         area = self.filter.area_filtering(raw_area)
         val = area if area is not None else 0.0
         self.area_label.setText(f"Area registrata: {val:.2f}")
+        self.digital_eye.update_eye(raw_x, raw_y, val)
 
         # Calculate threshold
         current_thresh = 0.0
@@ -332,11 +343,23 @@ class TestingWidget(QtWidgets.QWidget):
                 
                 if current_dist > self.gaze_tolerance:
                     self.gaze_warning_label.setText("⚠ SGUARDO FUORI CENTRO ⚠")
-                    #if self.logger: self.logger.log("Warning: Gaze deviated from center")
+                    if not self.is_gaze_deviated:
+                        self.is_gaze_deviated = True
+                        self.gaze_dev_start_time = 0.0
+                        if self.logger: self.logger.log("Warning: Gaze deviated from center")
                 else:
                     self.gaze_warning_label.setText("")
+                    if self.is_gaze_deviated:
+                        self.is_gaze_deviated = False
+                        dev_duration = time.time() - self.gaze_dev_start_time
+                        if self.logger: self.logger.log(f"Gaze returned to center after {dev_duration}s.")
             else:
                 self.gaze_warning_label.setText("⚠ OCCHIO NON RILEVATO ⚠")
+
+                if not self.is_gaze_deviated:
+                    self.is_gaze_deviated = True
+                    self.gaze_dev_start_time = time.time()
+                    if self.logger: self.logger.log("Warning: Eye tracking lost")
         
         if self.saver and self.state not in ["FINISHED", "COMPLETED_IDLE"]:
             self.saver.add_data(

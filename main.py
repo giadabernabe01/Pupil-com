@@ -25,6 +25,7 @@ from Testing import TestingWidget
 from KeyboardApp import KeyboardApp
 from StartupScreen import StartupWidget
 from SettingsDialog import SettingsDialog
+from DigitalEye import DigitalEyeWidget
 
 # ---------------------------------------------------------
 # SUBJECT DATA HANDLER
@@ -149,6 +150,10 @@ class MainMenuWidget(QtWidgets.QWidget):
         header_layout.addWidget(self.settings_btn)
         
         self.main_layout.addLayout(header_layout)
+
+        # Add Digital Twin to Main Menu
+        self.digital_eye = DigitalEyeWidget()
+        self.main_layout.addWidget(self.digital_eye, alignment=QtCore.Qt.AlignCenter)
 
         # --- STATUS LABELS ---
         status_layout = QtWidgets.QHBoxLayout()
@@ -340,8 +345,10 @@ class MainMenuWidget(QtWidgets.QWidget):
             else:
                 btn.setStyleSheet(self.inactive_style)
     
-    def update_data(self, raw_area):
-        #This function is called by MainWindow to update live label
+    def update_data(self, raw_area, raw_x=0, raw_y=0):
+        #This function is called by MainWindow to update live label and digital eye
+        if hasattr(self, 'digital_eye'):
+            self.digital_eye.update_eye(raw_x, raw_y, raw_area)
         area = self.filter.area_filtering(raw_area)
         val =  area if area is not None else 0.0
         self.live_label.setText(f"Area registrata: {val: .2f}") 
@@ -740,7 +747,7 @@ class MainWindow(QtWidgets.QMainWindow):
         current_widget = self.stack.currentWidget() 
         if hasattr(current_widget, 'update_data'):
             # Pass coordinates to TestingWidget
-            if isinstance(current_widget, TestingWidget):
+            if isinstance(current_widget, TestingWidget) or isinstance(current_widget, MainMenuWidget):
                 current_widget.update_data(area, raw_x=x, raw_y=y)
             else:
                 # Everything else only gets area
