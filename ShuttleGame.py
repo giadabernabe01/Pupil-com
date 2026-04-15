@@ -101,7 +101,7 @@ class GameWidget(QWidget):
     def reset_game_state(self):
         self.game_trigger = 0       # Sticky flag to pass triggers from PyQt to Pygame
         self.frame_event_code = 0   # Safe event code initialization
-        self.start_time = 2 
+        self.start_time = 3 
         self.collision_flag = False
         self.timestamp = np.array([0])
         self.planet_list = ["nettuno.png", "urano.png", "saturno.png", "giove.png", "marte.png", "terra.png", "venere.png", "mercurio.png", "sole.png"]
