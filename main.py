@@ -137,8 +137,8 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.settings_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent; 
-                color: #aaaaaa; 
-                font-size: 35px; 
+                color: #aaaaaa;
+                font-size: 45px;
                 font-weight: bold;
                 border: none;
             }
@@ -198,7 +198,6 @@ class MainMenuWidget(QtWidgets.QWidget):
                     background-color: #444; 
                     color: #888; 
                     border-radius: 10px; 
-                    font-size: 22px; 
                     font-weight: bold;
                 }
             """)
@@ -230,12 +229,12 @@ class MainMenuWidget(QtWidgets.QWidget):
 
         self.launch_button = QtWidgets.QPushButton("Avvia dispositivo")
         self.launch_button.setMinimumHeight(60)
-        self.launch_button.setStyleSheet("background-color: #333; color: #aaa; border: 1px solid #555; font-size: 16px;")
+        self.launch_button.setStyleSheet("background-color: #333; color: #aaa; border: 1px solid #555;")
         self.launch_button.clicked.connect(self.launch_software)
         
         self.ready_btn = QtWidgets.QPushButton("Dispositivo pronto")
         self.ready_btn.setMinimumHeight(60)
-        self.ready_btn.setStyleSheet("background-color: #28a745; color: white; font-size: 18px; font-weight: bold;")
+        self.ready_btn.setStyleSheet("background-color: #28a745; color: white; font-weight: bold;")
         self.ready_btn.clicked.connect(self.arm_system)
 
         footer_layout.addWidget(self.launch_button)
@@ -262,15 +261,13 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.active_style = """
             background-color: #0078d7; 
             color: white; 
-            font-size: 24px; 
             font-weight: bold;
             border: 3px solid white;
             border-radius: 10px;
         """
         self.inactive_style = """
             background-color: #444; 
-            color: #ccc; 
-            font-size: 22px; 
+            color: #ccc;
             font-weight: bold;
             border-radius: 10px;
         """
@@ -295,6 +292,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         """Activates pupil tracking when system is armed"""
         self.system_armed = True
         self.ready_btn.hide()
+        self.launch_button.hide()
 
         self.monitor.reset_monitor()
 
@@ -326,6 +324,7 @@ class MainMenuWidget(QtWidgets.QWidget):
 
     def check_pupil_process(self):
         """Checks if the acquisition software is running and disables the button if true"""
+        self.launch_button.show()
         try:
             output = subprocess.check_output("tasklist", shell = True).decode()
             if "Gazepoint.exe" in output or "pupil_capture.exe" in output:
@@ -441,6 +440,40 @@ class MainMenuWidget(QtWidgets.QWidget):
             self.label.setText("Software non trovato. Controlla il percorso.")
             self.logger.log(f"Error: {self.device_type} path not found")
 
+    def resizeEvent(self, event):
+        """Scala dinamicamente il testo e aggiorna gli stili del visual scanner"""
+        super().resizeEvent(event)
+        
+        # 1. Calcola la dimensione del font come percentuale dell'altezza della finestra
+        window_height = self.height()
+        button_font_size = max(14, int(window_height * 0.03))
+        
+        # 2. Aggiorna i template di stile aggiungendo il nuovo font-size dinamico
+        self.active_style = f"""
+            background-color: #0078d7; 
+            color: white; 
+            font-size: {button_font_size}px;
+            font-weight: bold;
+            border: 3px solid white;
+            border-radius: 10px;
+        """
+        self.inactive_style = f"""
+            background-color: #444; 
+            color: #ccc;
+            font-size: {button_font_size}px;
+            font-weight: bold;
+            border-radius: 10px;
+        """
+        
+        # 3. Riapplica immediatamente gli stili ai bottoni per aggiornarli a schermo
+        # Assicurandoci di rispettare quale bottone è attualmente "illuminato" dal visual scanner
+        if hasattr(self, 'scan_options'):
+            for i, btn in enumerate(self.scan_options):
+                if hasattr(self, 'current_index') and i == self.current_index:
+                    btn.setStyleSheet(self.active_style)
+                else:
+                    btn.setStyleSheet(self.inactive_style)
+
 # ---------------------------------------------------------
 # MAIN WINDOW WIDGET
 # ---------------------------------------------------------
@@ -461,8 +494,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QPushButton {
                 background-color: #ff4444; 
                 color: white; 
-                font-weight: bold; 
-                font-size: 20px;
+                font-weight: bold;
                 border: none;
                 border-bottom-left-radius: 10px;
             }
@@ -549,15 +581,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.receiver.start()
                 if hasattr(self, 'poll_timer'):
                     self.poll_timer.start(33) # Resume ~30 FPS UI updates
-
-    def resizeEvent(self, event):
-        """Called automatically whenever the window size changes"""
-        # Check if the button exists before trying to move it
-        if hasattr(self, 'shutdown_btn'):
-            self.shutdown_btn.move(self.width() - 50, 0)
-            self.shutdown_btn.raise_()
-        
-        super().resizeEvent(event)
 
     def setup_subject_session(self, subject_name, device_type):
         """Called when user enters a name"""
@@ -880,7 +903,6 @@ if __name__ == "__main__":
                 border-radius: 8px;
                 border: 2px solid #005a9e;
                 color: white;
-                font-size: 16px;
                 padding: 10px;
                 min-height: 40px;
             }
