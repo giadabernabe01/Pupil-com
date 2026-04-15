@@ -387,7 +387,7 @@ class GameWidget(QWidget):
         # Load Images
         try:
             # Draw background
-            starrysky = pygame.image.load(os.path.join(image_dir,'starrysky.jpg'))
+            starrysky = pygame.image.load(os.path.join(image_dir,'black_background.jpg'))
             window.blit(starrysky, (0,0))
 
             # Load shuttle image
