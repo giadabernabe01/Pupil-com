@@ -152,8 +152,14 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.main_layout.addLayout(header_layout)
 
         # Add Digital Twin to Main Menu
-        self.digital_eye = DigitalEyeWidget()
+        self.digital_eye = DigitalEyeWidget(device_type=self.device_type)
         self.main_layout.addWidget(self.digital_eye, alignment=QtCore.Qt.AlignCenter)
+
+        #Add red fixation dot to Main Menu
+        self.fixation_dot = QtWidgets.QLabel()
+        self.fixation_dot.setFixedSize(16, 16)
+        self.fixation_dot.setStyleSheet("background-color: red; border-radius: 8px;")
+        self.main_layout.addWidget(self.fixation_dot, alignment=QtCore.Qt.AlignCenter)
 
         # --- STATUS LABELS ---
         status_layout = QtWidgets.QHBoxLayout()
@@ -619,7 +625,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.menu_widget = MainMenuWidget(self.session_folder, self.params, self.selected_device)
         self.calibration_widget = CalibrationWidget()
         self.yn_widget = YNWidget()
-        self.testing_widget = TestingWidget()
+        self.testing_widget = TestingWidget(device_type = self.selected_device)
         self.game_widget = GameWidget(width, height, self.session_folder)
         self.keyboard_widget = KeyboardApp()
         

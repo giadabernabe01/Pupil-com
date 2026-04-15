@@ -26,7 +26,8 @@ class YNWidget(QtWidgets.QWidget):
 
         #Sound setup
         self.player = QMediaPlayer()
-        self.sound_directory = r"C:\Users\jadel\TESI\GUI_pl\Sounds"
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        self.sound_directory = os.path.join(base_path, "Sounds")
         self.sound_yes = os.path.join(self.sound_directory, "answer_yes.mp3")
         self.sound_no = os.path.join(self.sound_directory, "answer_no.mp3")
 

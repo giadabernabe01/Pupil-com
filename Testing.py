@@ -13,10 +13,11 @@ from DigitalEye import DigitalEyeWidget
 class TestingWidget(QtWidgets.QWidget):
     go_back_signal = QtCore.pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, device_type="gazepoint"):
         super().__init__()
-        self.filter = AreaFilter(fps=130, device_type="gazepoint")
-        self.monitor = ConstrictionMonitor(fps=130, thresh=0.75, device_type="gazepoint")
+        self.device_type = device_type
+        self.filter = AreaFilter(fps=130, device_type=self.device_type)
+        self.monitor = ConstrictionMonitor(fps=130, thresh=0.75, device_type=self.device_type)
         
         # Sound setup
         base_path = os.path.dirname(os.path.abspath(__file__))
@@ -47,12 +48,18 @@ class TestingWidget(QtWidgets.QWidget):
         self.layout.addWidget(title)
 
         # Digital eye twin
-        self.digital_eye = DigitalEyeWidget()
+        self.digital_eye = DigitalEyeWidget(device_type="gazepoint")
         self.layout.addWidget(self.digital_eye)
 
         self.area_label = QtWidgets.QLabel("Area registrata: 0.0")
         self.area_label.setStyleSheet("color: #888888; font-size: 14px;") # De-emphasized
         self.layout.addWidget(self.area_label)
+        self.area_label.hide()
+
+        self.fixation_dot = QtWidgets.QLabel()
+        self.fixation_dot.setFixedSize(16, 16)
+        self.fixation_dot.setStyleSheet("background-color: red; border-radius: 8px;")
+        self.layout.addWidget(self.fixation_dot, alignment=QtCore.Qt.AlignCenter)
 
         # Dynamic instruction label
         self.message = QtWidgets.QLabel("Inizializzazione in corso...\n Guarda lontano")
@@ -106,8 +113,6 @@ class TestingWidget(QtWidgets.QWidget):
         self.timestamps_history = []
 
         self.folder_path = ""
-
-    
 
     def start_session(self, folder_path, params, device_type):
         """Called by MainWindow when entering this screen"""
@@ -342,7 +347,7 @@ class TestingWidget(QtWidgets.QWidget):
                 current_dist = np.sqrt((raw_x - self.center_x)**2 + (raw_y - self.center_y)**2)
                 
                 if current_dist > self.gaze_tolerance:
-                    self.gaze_warning_label.setText("⚠ SGUARDO FUORI CENTRO ⚠")
+                    self.gaze_warning_label.setText("") #("⚠ SGUARDO FUORI CENTRO ⚠")
                     if not self.is_gaze_deviated:
                         self.is_gaze_deviated = True
                         self.gaze_dev_start_time = 0.0
