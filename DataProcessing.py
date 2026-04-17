@@ -105,7 +105,7 @@ class ConstrictionMonitor:
         self.long_dur = long_dur
         self.extra_dur = extra_dur
         self.device_type = device_type
-        self.baseline_buffer = deque(maxlen=self.fps*2) # last 2 seconds buffer
+        self.baseline_buffer = deque(maxlen=round(self.fps*2)) # last 1 seconds buffer
         self.filter = AreaFilter(fps=self.fps, device_type=self.device_type)
         self.drop_start_time = None
         self.short_trigger_handled = False
@@ -118,7 +118,7 @@ class ConstrictionMonitor:
         self.short_trigger_handled = False
         self.long_trigger_handled = False
         self.extra_trigger_handled = False
-        self.baseline_buffer.clear() # Critical: forces a fresh threshold calculation
+        #self.baseline_buffer.clear() # Critical: forces a fresh threshold calculation
 
     def baseline_collection(self, area):
         last_val = self.filter.area_filtering(area)
@@ -129,8 +129,6 @@ class ConstrictionMonitor:
         # collect baseline data for first 2 seconds
         if len(self.baseline_buffer) < self.fps*2:
             self.baseline_buffer.append(last_val)
-        else:
-            print("Baseline acquisita.")
 
     def constriction_detector(self, area):
 
@@ -147,10 +145,11 @@ class ConstrictionMonitor:
         if last_val is None or last_val == 0:
             return 0
 
-        # calculate threshold value
         if len(self.baseline_buffer) > 0:
-            thresh_val = np.mean(self.baseline_buffer) * self.thresh
+            current_mean = np.mean(self.baseline_buffer)
+            thresh_val = current_mean * self.thresh
         else:
+            current_mean = 0
             thresh_val = 0
 
         # check whether last value is below threshold
@@ -160,6 +159,7 @@ class ConstrictionMonitor:
                 self.drop_start_time = time.time()
             # check how long it has been below threshold
             elapsed = time.time() - self.drop_start_time
+
             if elapsed >= self.extra_dur:
                 # if below threshold for longer than extra_dur --> extra feature unlocked
                 if not self.extra_trigger_handled:
@@ -178,6 +178,10 @@ class ConstrictionMonitor:
                     print("Short constriction detected.")
                     self.short_trigger_handled = True
                     return 1
+            # inject below threshold value for asymmetrical weighed average
+            weight_new = 0.05
+            blended_val = (1.0 - weight_new) * current_mean + (weight_new * last_val)
+            self.baseline_buffer.append(blended_val)
         else:
             # reset timer
             self.drop_start_time = None
