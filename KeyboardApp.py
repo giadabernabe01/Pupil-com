@@ -40,7 +40,7 @@ class KeyboardApp(QWidget):
         # Layout setup
         self.layout = QVBoxLayout()
         self.label = QLabel("SCRIVI QUELLO CHE VUOI")
-        self.label.setFont(QFont('Arial', 12, QFont.Bold))
+        self.label.setFont(QFont('Arial', 16, QFont.Bold))
         self.label.setStyleSheet('color: white;')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
@@ -61,8 +61,8 @@ class KeyboardApp(QWidget):
         self.layout.addWidget(self.display)
 
         # Visual styles
-        self.active_style = "background-color: #0078d7; color: white; font-size:18px; border: 2px solid white;"
-        self.inactive_style = "background-color:#2b2b2b; color: white; font-size: 16px; border: 1px solid #555;"
+        self.active_style = "background-color: #0078d7; color: white; border: 2px solid white;"
+        self.inactive_style = "background-color:#2b2b2b; color: white; border: 1px solid #555;"
         self.detected_style = "background-color: #1a1a1a; color: #555; border: 1px solid #333;" # Dark/Greyed out
 
         # Grid setup
@@ -75,7 +75,7 @@ class KeyboardApp(QWidget):
         for i in range(3):
             btn = QPushButton(self.default_suggestions[i])
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            btn.setFont(QFont('Arial', 12, QFont.Bold))
+            btn.setFont(QFont('Arial', 14 , QFont.Bold))
             btn.setStyleSheet(self.inactive_style)
             btn.clicked.connect(lambda checked, idx=i: self.process_suggestion_click(idx))
             self.grid_layout.addWidget(btn, 0, i*2, 1, 2)
@@ -96,7 +96,7 @@ class KeyboardApp(QWidget):
             for col_idx, key in enumerate(row):
                 btn = QPushButton(key)
                 btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                btn.setFont(QFont('Arial', 14, QFont.Bold))
+                btn.setFont(QFont('Arial', 18, QFont.Bold))
                 btn.setStyleSheet(self.inactive_style)
                 btn.clicked.connect(lambda checked, k=key: self.on_click(k))
                 self.grid_layout.addWidget(btn, row_idx+1, col_idx)
@@ -107,23 +107,25 @@ class KeyboardApp(QWidget):
         self.bottom_row_idx = len(self.keys) + 1
         self.space_btn = QPushButton("SPAZIO")
         self.space_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.space_btn.setFont(QFont('Arial', 14, QFont.Bold))
+        self.space_btn.setFont(QFont('Arial', 16, QFont.Bold))
         self.space_btn.setStyleSheet(self.inactive_style)
         self.space_btn.clicked.connect(lambda: self.on_click(" "))
         self.grid_layout.addWidget(self.space_btn, self.bottom_row_idx, 0, 1, 4)
 
         self.canc_button = QPushButton("CANCELLA")
         self.canc_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.canc_button.setFont(QFont('Arial', 14, QFont.Bold))
+        self.canc_button.setFont(QFont('Arial', 16, QFont.Bold))
         self.canc_button.setStyleSheet(self.inactive_style)
         self.canc_button.clicked.connect(lambda: self.on_click("CANC"))
         self.grid_layout.addWidget(self.canc_button, self.bottom_row_idx, 4, 1, 2)
 
         # Back button
         self.back_button = QPushButton("MENÙ PRINCIPALE")
-        self.back_button.setFont(QFont('Arial', 14, QFont.Bold))
+        self.back_button.setFont(QFont('Arial', 12, QFont.Bold))
         self.back_button.setStyleSheet(self.inactive_style)
-        self.back_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.back_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.back_button.setMinimumHeight(40)
+        self.back_button.setMaximumHeight(60)
         self.back_button.clicked.connect(self.go_back_signal.emit)
         self.layout.addWidget(self.back_button)
 
@@ -161,23 +163,35 @@ class KeyboardApp(QWidget):
 
     def resizeEvent(self, event):
         """Dynamically scales all text to fit the screen size"""
+        super().resizeEvent(event)
+        
         # Calculate base size relative to window height (minimum 14px)
         base_size = max(14, int(self.height() / 30)) 
 
-        # 1. Update all standard buttons
-        btn_font = QFont('Arial', base_size, QFont.Bold)
+        # 1. Update all standard buttons to be HUGE (1.8x multiplier)
+        key_font_size = int(base_size * 1.8)
+        key_font = QFont('Arial', key_font_size, QFont.Bold)
         for btn in self.findChildren(QPushButton):
-            btn.setFont(btn_font)
+            btn.setFont(key_font)
 
-        # 2. Update the Text Display (Make it 50% larger than buttons)
+        # 2. OVERRIDE Suggestion Buttons (Slightly smaller so words fit, 1.2x)
+        sugg_font_size = int(base_size * 1.2)
+        sugg_font = QFont('Arial', sugg_font_size, QFont.Bold)
+        for btn in self.suggestion_widgets:
+            btn.setFont(sugg_font)
+
+        # 3. OVERRIDE the Back Button to be smaller (0.7x)
+        small_btn_font_size = max(12, int(base_size * 0.7))
+        small_btn_font = QFont('Arial', small_btn_font_size, QFont.Bold)
+        self.back_button.setFont(small_btn_font)
+
+        # 4. Update the Text Display
         self.display.setFont(QFont('Arial', int(base_size * 1.5)))
         
-        # 3. Update all Labels
+        # 5. Update all Labels
         self.label.setFont(QFont('Arial', int(base_size * 1.2), QFont.Bold))
         self.pause_label.setFont(QFont('Arial', int(base_size * 1.5), QFont.Bold))
         self.live_label.setFont(QFont('Arial', int(base_size * 0.8)))
-
-        super().resizeEvent(event)
 
     def log_once(self, message):
         """Prevents logging identical messages at high frame rates"""

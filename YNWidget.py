@@ -69,8 +69,8 @@ class YNWidget(QtWidgets.QWidget):
         self.scan_start_time = 0
 
         # VISUAL STYLES
-        self.active_style = "background-color: #0078d7; color: white; font-size: 20px;"
-        self.inactive_style = "background-color: #333333; color: gray; font-size: 20px;"
+        self.active_style = "background-color: #0078d7; color: white;"
+        self.inactive_style = "background-color: #333333; color: gray;"
         self.detected_style = "background-color: #1a1a1a; color: #555; border: 1px solid #333;" # Dark/Greyed out
         self.yes_button.setStyleSheet(self.inactive_style)
         self.no_button.setStyleSheet(self.inactive_style)

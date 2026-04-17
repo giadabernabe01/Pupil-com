@@ -76,7 +76,10 @@ class SettingsDialog(QtWidgets.QDialog):
                     # It's a float! Create a QDoubleSpinBox
                     spin_box = QtWidgets.QDoubleSpinBox()
                     spin_box.setRange(0.0, 10000.0)
-                    spin_box.setSingleStep(0.1) # Makes clicking the arrows step by 0.1
+                    if key == "threshold":
+                        spin_box.setSingleStep(0.05) # Finer control for threshold
+                    else:
+                        spin_box.setSingleStep(0.1)  # Default for other floats like durations
                     spin_box.setValue(value)
                     
                 else:
