@@ -535,9 +535,9 @@ class KeyboardApp(QWidget):
                 self.log_once("Long constriction detected: moving to keyboard")
                 if self.plotter: self.plotter.mark_constriction("long")
                 self.pending_selection = "LONG"
-                self.next_state = "KEYBOARD_ROW"
-                self.state = "COOLDOWN"
-                self.reset_ui_styles()
+                #self.next_state = "KEYBOARD_ROW"
+                #self.state = "COOLDOWN"
+                #self.reset_ui_styles()
             elif status == 3:
                 self.trigger_pause()
             elif not is_eye_constricted and self.pending_selection == "SHORT":
