@@ -111,6 +111,8 @@ class ConstrictionMonitor:
         self.short_trigger_handled = False
         self.long_trigger_handled = False
         self.extra_trigger_handled = False
+        self.current_sma_thresh = 0.0
+        self.exit_thresh = None
 
     def reset_monitor(self):
         """Resets internal timers and flags."""
@@ -146,17 +148,22 @@ class ConstrictionMonitor:
             return 0
 
         if len(self.baseline_buffer) > 0:
-            current_mean = np.mean(self.baseline_buffer)
-            thresh_val = current_mean * self.thresh
+            current_mean = np.mean(self.baseline_buffer) 
+            self.current_sma_thresh = current_mean * self.thresh 
         else:
-            current_mean = 0
-            thresh_val = 0
+            self.current_sma_thresh = 0.0
+
+        if self.drop_start_time is None:
+            active_thresh = self.current_sma_thresh
+        else:
+            active_thresh = self.exit_thresh
 
         # check whether last value is below threshold
-        if last_val < thresh_val:
+        if last_val < active_thresh:
             # check whether this is the first below threshold
             if self.drop_start_time is None:
                 self.drop_start_time = time.time()
+                self.exit_thresh = self.current_sma_thresh
             # check how long it has been below threshold
             elapsed = time.time() - self.drop_start_time
 
@@ -178,12 +185,10 @@ class ConstrictionMonitor:
                     print("Short constriction detected.")
                     self.short_trigger_handled = True
                     return 1
-            # inject below threshold value for asymmetrical weighed average
-            weight_new = 0.05
-            blended_val = (1.0 - weight_new) * current_mean + (weight_new * last_val)
-            self.baseline_buffer.append(blended_val)
+            self.baseline_buffer.append(last_val) # add value to keep calculating moving average
         else:
             # reset timer
+            self.exit_thresh = None
             self.drop_start_time = None
             self.short_trigger_handled = False
             self.long_trigger_handled = False

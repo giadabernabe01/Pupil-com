@@ -194,9 +194,8 @@ class YNWidget(QtWidgets.QWidget):
         area = self.filter.area_filtering(raw_area)
         val = area if area is not None else 0.0
         self.area_label.setText(f"Area registrata: {val:.2f}")
-        # Calculate threshold
-        current_thresh = np.mean(self.monitor.baseline_buffer) * self.monitor.thresh if self.monitor.baseline_buffer else 0
-
+        current_thresh = self.monitor.current_sma_thresh
+        exit_thresh = self.monitor.exit_thresh
         # Monitor logic
         status = self.monitor.constriction_detector(raw_area)
 
@@ -315,11 +314,11 @@ class YNWidget(QtWidgets.QWidget):
 
         # Save data to CSV
         if self.saver:
-            self.saver.add_data(raw_area, val, current_thresh, status, frame_answer_code)
+            self.saver.add_data(raw_area, val, current_thresh, exit_thresh, status, frame_answer_code)
         
         # Plot data
         if self.plotter:
-            self.plotter.add_data(val)
+            self.plotter.add_data(val, current_thresh, exit_thresh)
 
 
     def reset_to_initialization(self):

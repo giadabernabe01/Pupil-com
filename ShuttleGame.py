@@ -152,9 +152,8 @@ class GameWidget(QWidget):
         # 1. ALWAYS perform the math synced perfectly with the poll_timer!
         self.filtered_val = self.filter.area_filtering(raw_area)
         
-        current_thresh = 0.0
-        if len(self.monitor.baseline_buffer) > 0:
-            current_thresh = np.mean(self.monitor.baseline_buffer) * self.monitor.thresh
+        current_thresh = self.monitor.current_sma_thresh
+        exit_thresh = self.monitor.exit_thresh
             
         status = self.monitor.constriction_detector(raw_area)
         
@@ -164,11 +163,11 @@ class GameWidget(QWidget):
 
         # 2. ALWAYS save and plot, keeping the time-series perfectly accurate
         if self.plotter: 
-            self.plotter.add_data(self.filtered_val, current_thresh)
+            self.plotter.add_data(self.filtered_val, current_thresh, exit_thresh)
             
         if self.saver: 
             event = getattr(self, 'frame_event_code', 0) if getattr(self, 'game_active', False) else "MENU"
-            self.saver.add_data(raw_area, self.filtered_val, current_thresh, status, event)
+            self.saver.add_data(raw_area, self.filtered_val, current_thresh, exit_thresh, status, event)
             # Consume the event code so it doesn't print to CSV multiple times
             if getattr(self, 'game_active', False) and event != 0:
                 self.frame_event_code = 0 

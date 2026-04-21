@@ -358,9 +358,8 @@ class MainMenuWidget(QtWidgets.QWidget):
         val =  area if area is not None else 0.0
         self.live_label.setText(f"Area registrata: {val: .2f}") 
 
-        current_thresh = 0.0
-        if len(self.monitor.baseline_buffer) > 0:
-            current_thresh = np.mean(self.monitor.baseline_buffer) * self.monitor.thresh
+        current_thresh = self.monitor.current_sma_thresh
+        exit_thresh = self.monitor.exit_thresh
 
         machine_status = "UNARMED"
         status = 0
@@ -416,7 +415,7 @@ class MainMenuWidget(QtWidgets.QWidget):
                     self.check_pupil_process()
 
         if hasattr(self, 'saver') and self.saver:
-            self.saver.add_data(raw_area, val, current_thresh, status, machine_status)                
+            self.saver.add_data(raw_area, val, current_thresh, exit_thresh, status, machine_status)                
 
     def launch_software(self):
         if self.device_type == "gazepoint":

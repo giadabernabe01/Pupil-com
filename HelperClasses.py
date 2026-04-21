@@ -49,15 +49,20 @@ class DataPlotter:
         self.timestamps = []
         self.filtered_data = []
         self.thresholds = []
+        self.exit_thresholds = []
 
         self.short_constrictions = []
         self.long_constrictions = []
     
-    def add_data(self, val, threshold=0.0):
+    def add_data(self, val, threshold, exit_threshold):
         t = time.time() - self.start_time
         self.timestamps.append(t)
         self.filtered_data.append(val)
         self.thresholds.append(threshold)
+        if exit_threshold is not None: 
+            self.exit_thresholds.append(exit_threshold) 
+        else: 
+            self.exit_thresholds.append(float('nan'))
 
     def mark_constriction(self, c_type = "short"):
         t = time.time() - self.start_time
@@ -74,6 +79,8 @@ class DataPlotter:
 
         if any(t>0 for t in self.thresholds):
             plt.plot(self.timestamps, self.thresholds, label='Threshold', color='black', linestyle='--')
+        if any(t>0 for t in self.thresholds):
+            plt.plot(self.timestamps, self.exit_thresholds, label='Exit threshold', color='red', linestyle='--')
         
         # Add red lines for short constriction
         for i, ct in enumerate(self.short_constrictions):
@@ -119,15 +126,17 @@ class DataSaver:
         self.data_rows = []
         self.start_time = time.time()
 
-    def add_data(self, raw, filtered, threshold, event_code, extra_value="", gaze_x=None, gaze_y=None):
+    def add_data(self, raw, filtered, threshold, exit_threshold, event_code, extra_value="", gaze_x=None, gaze_y=None):
         """Call this every frame to record a data point."""
         timestamp = time.time()
+        formatted_exit = f"{exit_threshold:.2f}" if exit_threshold is not None else ""
 
         row = [
             timestamp, 
             f"{raw:.2f}",       
             f"{filtered:.2f}", 
-            f"{threshold:.2f}", 
+            f"{threshold:.2f}",
+            formatted_exit, 
             event_code, 
             extra_value        
         ]
@@ -146,9 +155,9 @@ class DataSaver:
         filename = f"{self.session_name}_Data_{timestamp_str}.csv"
         save_path = os.path.join(self.folder_path, filename)
 
-        header = ["Timestamp", "Raw_Area", "Filtered_Area", "Threshold", "Event_Code", extra_column_name]
+        header = ["Timestamp", "Raw_Area", "Filtered_Area", "Threshold", "Exit_Threshold", "Event_Code", extra_column_name]
         
-        if len(self.data_rows[0]) > 6:
+        if len(self.data_rows[0]) > 7:
             header.extend(["Gaze_X", "Gaze_Y"])
             
         try:

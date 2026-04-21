@@ -246,15 +246,13 @@ class TestingWidget(QtWidgets.QWidget):
         self.area_label.setText(f"Area registrata: {val:.2f}")
         self.digital_eye.update_eye(raw_x, raw_y, val)
 
-        # Calculate threshold
-        current_thresh = 0.0
-        if len(self.monitor.baseline_buffer) > 0:
-            current_thresh = np.mean(self.monitor.baseline_buffer)* self.monitor.thresh
-
         status = self.monitor.constriction_detector(raw_area)
     
+        current_thresh = self.monitor.current_sma_thresh
+        exit_thresh = self.monitor.exit_thresh
+
         # Updating plotter
-        if self.plotter: self.plotter.add_data(val, current_thresh)
+        if self.plotter: self.plotter.add_data(val, current_thresh, exit_thresh)
 
         elapsed = time.time() - self.state_start_time
 
@@ -370,7 +368,8 @@ class TestingWidget(QtWidgets.QWidget):
             self.saver.add_data(
                 raw_area, 
                 val, 
-                current_thresh, 
+                current_thresh,
+                exit_thresh, 
                 status, 
                 frame_instruction_code,
                 #extra_value="", # Leave blank if unused

@@ -426,16 +426,10 @@ class KeyboardApp(QWidget):
         status = self.monitor.constriction_detector(raw_area)
         is_eye_constricted = self.monitor.drop_start_time is not None
 
-        current_thresh = 0.0
-        if len(self.monitor.baseline_buffer) > 0:
-            # Calculate the threshold as a percentage of the current baseline mean
-            current_thresh = np.mean(self.monitor.baseline_buffer) * self.monitor.thresh
+        current_thresh = self.monitor.current_sma_thresh
+        exit_thresh = self.monitor.exit_thresh
 
         plot_val = area if area is not None else 0.0
-        if self.saver:
-            self.saver.add_data(raw_area, plot_val, current_thresh, status)
-        if self.plotter:
-            self.plotter.add_data(plot_val, current_thresh)
 
         if area is not None:
             self.live_label.setText(f"Acquisendo...")
@@ -621,10 +615,10 @@ class KeyboardApp(QWidget):
                 self.scan_start_time = time.time()
 
         if self.saver:
-            self.saver.add_data(raw_area, plot_val, current_thresh, status, frame_output)
+            self.saver.add_data(raw_area, plot_val, current_thresh, exit_thresh, status, frame_output)
 
         if self.plotter:
-            self.plotter.add_data(plot_val, current_thresh)
+            self.plotter.add_data(plot_val, current_thresh, exit_thresh)
 
     def on_click(self, key):
         current = self.display.text()
