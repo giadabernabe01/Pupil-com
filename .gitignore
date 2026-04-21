@@ -4,6 +4,7 @@ token.pickle
 Experimental_Results/
 Images/
 venv/
+.vscode/
 2026-04-07_095538_PL/session_log.txt
 2026-04-07_095702_PL/session_log.txt
 __pycache__/Calibration.cpython-312.pyc
