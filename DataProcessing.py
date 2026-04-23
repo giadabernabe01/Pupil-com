@@ -161,11 +161,29 @@ class ConstrictionMonitor:
         # check whether last value is below threshold
         if last_val < active_thresh:
             # check whether this is the first below threshold
+            self.above_ma = (last_val > self.current_sma_thresh)
             if self.drop_start_time is None:
                 self.drop_start_time = time.time()
                 self.exit_thresh = self.current_sma_thresh
+                self.above_ma = False
+                self.cross_count = 0
             # check how long it has been below threshold
             elapsed = time.time() - self.drop_start_time
+            #check if it's below moving average as well and count crossings
+            if self.above_ma and self.cross_count == 0:
+                self.cross_count += 1 
+            elif not self.above_ma and self.cross_count == 1:
+                self.cross_count += 1
+            # set new threshold and mark a new constriction start if the signal hasn't gone above fixed threshold 
+            # but has crossed ma threshold again
+            if self.cross_count == 2:
+                self.exit_thresh = None
+                self.drop_start_time = None
+                self.short_trigger_handled = False
+                self.long_trigger_handled = False
+                self.extra_trigger_handled = False
+                self.baseline_buffer.append(last_val)
+                return 0
 
             if elapsed >= self.extra_dur:
                 # if below threshold for longer than extra_dur --> extra feature unlocked
