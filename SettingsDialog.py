@@ -1,9 +1,9 @@
 import json
 import os
+import copy
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 class SettingsDialog(QtWidgets.QDialog):
-    # 1. ADDED current_device to arguments
     def __init__(self, parent=None, params_file="parameters.json", current_device="gazepoint"):
         super().__init__(parent)
         self.setWindowTitle("Global Settings")
@@ -121,13 +121,22 @@ class SettingsDialog(QtWidgets.QDialog):
             return {}
 
     def save_and_close(self):
-        """Read inputs and write back to JSON"""
-        new_data = {}
+        """Read inputs and write back to JSON safely"""
+        
+        # 1. DEEPCOPY prevents the deletion of text/boolean settings!
+        new_data = copy.deepcopy(self.current_params)
 
         for (section, key), widget in self.inputs.items():
             if section not in new_data:
                 new_data[section] = {}
-            new_data[section][key] = widget.value()
+            
+            # 2. Extract value based on the widget type
+            if isinstance(widget, QtWidgets.QCheckBox):
+                new_data[section][key] = widget.isChecked()
+            elif isinstance(widget, QtWidgets.QLineEdit):
+                new_data[section][key] = widget.text()
+            else:
+                new_data[section][key] = widget.value() # For Spinboxes
 
         try:
             with open(self.params_file, "w") as f:

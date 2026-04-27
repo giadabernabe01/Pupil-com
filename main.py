@@ -370,49 +370,50 @@ class MainMenuWidget(QtWidgets.QWidget):
             status = self.monitor.constriction_detector(raw_area)
             machine_status = f"ARMED_{self.state}"
 
-            # State Machine
-            if self.state == "INITIALIZATION":
-                self.live_label.setText("Inizializzazione Menu... Guarda lontano")
-                self.monitor.baseline_collection(raw_area)
+            if not getattr(self, 'settings_open', False):
+                # State Machine
+                if self.state == "INITIALIZATION":
+                    self.live_label.setText("Inizializzazione Menu... Guarda lontano")
+                    self.monitor.baseline_collection(raw_area)
 
-                # use inactive style for all
-                for btn in self.scan_options: btn.setStyleSheet(self.inactive_style)
+                    # use inactive style for all
+                    for btn in self.scan_options: btn.setStyleSheet(self.inactive_style)
 
-                if time.time() - self.state_start_time > self.t_init:
-                    self.state = "SCANNING"
-                    self.scan_start_time = time.time()
-                    self.current_index = 0
-                    self.live_label.setText("Menu Attivo: Seleziona l'opzione desiderata")
+                    if time.time() - self.state_start_time > self.t_init:
+                        self.state = "SCANNING"
+                        self.scan_start_time = time.time()
+                        self.current_index = 0
+                        self.live_label.setText("Menu Attivo: Seleziona l'opzione desiderata")
 
-            elif self.state == "SCANNING":
-                self.update_visual_scanning()
+                elif self.state == "SCANNING":
+                    self.update_visual_scanning()
 
-                # Trigger Logic
-                if status == 1:
-                    selected_btn = self.scan_options[self.current_index]
-                    print(f"Menu: Selezionato {selected_btn.text()}")
+                    # Trigger Logic
+                    if status == 1:
+                        selected_btn = self.scan_options[self.current_index]
+                        print(f"Menu: Selezionato {selected_btn.text()}")
 
-                    selected_btn.click()
+                        selected_btn.click()
 
-                    self.state = "COOLDOWN"
-                    self.state_start_time = time.time()
+                        self.state = "COOLDOWN"
+                        self.state_start_time = time.time()
 
-            elif self.state == "COOLDOWN":
-                remaining = self.t_init - (time.time() - self.state_start_time)
-                self.live_label.setText("Attendi {remaining: .1f}...")
+                elif self.state == "COOLDOWN":
+                    remaining = self.t_init - (time.time() - self.state_start_time)
+                    self.live_label.setText("Attendi {remaining: .1f}...")
 
-                self.monitor.constriction_detector(raw_area)
+                    self.monitor.constriction_detector(raw_area)
 
-                if remaining <= 0:
-                    # re-initialization
-                    self.monitor.baseline_buffer.clear()
-                    self.monitor.long_trigger_handled = False
-                    self.monitor.short_trigger_handled = False
-                    self.state = "INITIALIZATION"
-                    self.state_start_time = time.time()
-                    
-                    # re-check process status
-                    self.check_pupil_process()
+                    if remaining <= 0:
+                        # re-initialization
+                        self.monitor.baseline_buffer.clear()
+                        self.monitor.long_trigger_handled = False
+                        self.monitor.short_trigger_handled = False
+                        self.state = "INITIALIZATION"
+                        self.state_start_time = time.time()
+                        
+                        # re-check process status
+                        self.check_pupil_process()
 
         if hasattr(self, 'saver') and self.saver:
             self.saver.add_data(raw_area, val, current_thresh, exit_thresh, status, machine_status)                
@@ -516,16 +517,33 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.showFullScreen()
 
     def open_settings_window(self):
+        # 1. TURN ON THE BLINDFOLD
+        self.menu_widget.settings_open = True
+        if hasattr(self.menu_widget, 'monitor'):
+            self.menu_widget.monitor.reset_monitor()
+
         # Pass the currently active device into the dialog
         dialog = SettingsDialog(self, params_file="parameters.json", current_device=self.selected_device)
 
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+        # 2. FREEZE AND WAIT FOR USER
+        result = dialog.exec_() # Script pauses here until dialog closes
+
+        # 3. TURN OFF THE BLINDFOLD (Always runs, whether they hit Save or Cancel)
+        self.menu_widget.settings_open = False
+
+        # 4. PROCESS THE SETTINGS IF THEY HIT SAVE
+        if result == QtWidgets.QDialog.Accepted:
             print("Reloading parameters...")
             self.params = load_parameters()
             
             gui_config = self.params.get("gui", {})
             self.menu_widget.t_scan = gui_config.get("scan_interval_dur", 3.5)
             self.menu_widget.t_init = gui_config.get("initialization_dur", 3.0)
+            
+            # --- EXTRACT MISSING VARIABLES FOR THE MONITOR ---
+            constrict_config = self.params.get("constriction", {})
+            self.short = constrict_config.get("short_constr_dur", 0.5)
+            self.long = constrict_config.get("long_constr_dur", 3.0)
 
             # --- DEVICE HOT-SWAP LOGIC ---
             new_device = dialog.get_selected_device()
@@ -549,7 +567,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 
                 # 2. Overwrite the MainMenu's filters with the new FPS parameters
                 self.menu_widget.filter = AreaFilter(fps=active_fps, device_type=self.selected_device)
-                self.menu_widget.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.selected_device, short_dur=self.short, long_dur=self.long)
+                self.menu_widget.monitor = ConstrictionMonitor(
+                    fps=active_fps, 
+                    thresh=threshold, 
+                    device_type=self.selected_device, 
+                    short_dur=self.short, 
+                    long_dur=self.long
+                )
                 
                 # 3. Stop the polling timer so it doesn't try to pull from a dying thread
                 if hasattr(self, 'poll_timer'):
@@ -581,6 +605,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 if hasattr(self, 'poll_timer'):
                     self.poll_timer.start(33) # Resume ~30 FPS UI updates
 
+        # 5. FINAL RESET TO CLEAR GHOST INPUTS
+        if hasattr(self.menu_widget, 'monitor'):
+            self.menu_widget.monitor.reset_monitor()
+
+            
     def setup_subject_session(self, subject_name, device_type):
         """Called when user enters a name"""
         self.selected_device = device_type
