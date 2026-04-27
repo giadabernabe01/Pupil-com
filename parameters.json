@@ -1,7 +1,7 @@
 {
     "constriction": {
-        "threshold": 0.8,
-        "short_constr_dur": 0.3,
+        "threshold": 0.75,
+        "short_constr_dur": 0.2,
         "long_constr_dur": 3.0,
         "gp3_fps": 60,
         "pupilcore_fps": 125
@@ -17,7 +17,7 @@
     },
     "keyboard_widget": {
         "max_loops": 2,
-        "scan_interval_dur": 1.5000000000000004,
+        "scan_interval_dur": 1.5,
         "initialization_dur": 2.5,
         "cooldown_dur": 0.0,
         "extra_trigger_dur": 5.0

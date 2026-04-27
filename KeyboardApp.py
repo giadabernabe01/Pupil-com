@@ -226,7 +226,7 @@ class KeyboardApp(QWidget):
         threshold = self.params["constriction"].get("threshold", 0.75)
 
         self.filter = AreaFilter(fps=active_fps, device_type=self.device_type)
-        self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type)
+        self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type, short_dur=self.short, long_dur=self.long)
 
         self.reset_to_initialization()
         if self.logger: self.logger.log("Session Started")

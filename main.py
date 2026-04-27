@@ -549,7 +549,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 
                 # 2. Overwrite the MainMenu's filters with the new FPS parameters
                 self.menu_widget.filter = AreaFilter(fps=active_fps, device_type=self.selected_device)
-                self.menu_widget.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.selected_device)
+                self.menu_widget.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.selected_device, short_dur=self.short, long_dur=self.long)
                 
                 # 3. Stop the polling timer so it doesn't try to pull from a dying thread
                 if hasattr(self, 'poll_timer'):

@@ -69,7 +69,7 @@ class GameWidget(QWidget):
         threshold = self.params["constriction"].get("threshold", 0.75)
 
         self.filter = AreaFilter(fps=active_fps, device_type=self.device_type)
-        self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type)
+        self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type, short_dur=self.short, long_dur=self.long)
         print(f"{active_fps}")
 
         self.reset_to_initialization()
@@ -385,7 +385,7 @@ class GameWidget(QWidget):
         # Load Images
         try:
             # Draw background
-            starrysky = pygame.image.load(os.path.join(image_dir,'black_background.jpg'))
+            starrysky = pygame.image.load(os.path.join(image_dir,'starrysky_red.jpg'))
             window.blit(starrysky, (0,0))
 
             # Load shuttle image
@@ -454,8 +454,9 @@ class GameWidget(QWidget):
         
         t_start = datetime.datetime.now()
         frame_counter = 0
+        self.game_trigger = 0 
+        self.monitor.reset_monitor()
 
-        # Game loop
         # Game loop
         while self.lives > 0 and self.openflag and self.game_active:
             self.clock.tick(60)
@@ -480,7 +481,6 @@ class GameWidget(QWidget):
             # Raising difficulty when level up
             self.level = int(self.score / 5)
             
-            # Speeds up by 15% every level. No more erratic jumps!
             speed_multiplier = 1.0 + (self.level * 0.15)
             self.planet_speed = self.base_planet_speed * speed_multiplier
             self.asteroid_speed = (self.base_planet_speed * 1.2) * speed_multiplier
