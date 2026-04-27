@@ -121,7 +121,6 @@ class GameWidget(QWidget):
 
         self.lives = getattr(self, 'default_lives', 5)
 
-        
         self.psu_multiplier = 1 
         self.score = 0
         self.level = 0
@@ -255,7 +254,7 @@ class GameWidget(QWidget):
 
         self.monitor.reset_monitor()
         if hasattr(self.monitor, 'baseline_buffer'):
-            self.monitor.baseline_buffer = []
+            self.monitor.baseline_buffer.clear()
 
         self.game_active = False # safety reset
 
@@ -566,7 +565,7 @@ class GameWidget(QWidget):
                         break
 
             # Need the threshold for the UI overlay feedback
-            current_thresh = np.mean(self.monitor.baseline_buffer) * self.monitor.thresh if self.monitor.baseline_buffer else 0
+            current_thresh = self.monitor.current_sma_thresh if self.monitor.baseline_buffer else 0
 
             # -------------------------------------------------------------
             # PAUSE MENU LOGIC (TRIGGERED BY LONG CONSTRICTION)
