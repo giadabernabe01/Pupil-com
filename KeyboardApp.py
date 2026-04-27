@@ -241,6 +241,7 @@ class KeyboardApp(QWidget):
 
     def reset_to_initialization(self):
         self.monitor.baseline_buffer.clear()
+        self.display.setText("")
         self.state = "INITIALIZATION"
         self.state_start_time = time.time()
         self.pending_selection = None
