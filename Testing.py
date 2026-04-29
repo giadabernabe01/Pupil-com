@@ -6,6 +6,7 @@ import datetime
 from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore import QUrl
+from PyQt5.QtWidgets import QApplication
 from DataProcessing import AreaFilter, ConstrictionMonitor, GazepointReceiver
 from HelperClasses import SessionLogger, DataPlotter, DataSaver
 from DigitalEye import DigitalEyeWidget
@@ -79,25 +80,35 @@ class TestingWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.plot_image_label)
 
         # Buttons
-        self.back_button = QtWidgets.QPushButton("Indietro")
-        self.back_button.setMinimumHeight(50)
-        self.back_button.clicked.connect(self.go_back_signal.emit)
-        self.layout.addWidget(self.back_button)
-
-        self.start_button = QtWidgets.QPushButton("Inizia il test")
+        self.start_button = QtWidgets.QPushButton("INIZIA")
         self.start_button.setMinimumHeight(50)
         self.start_button.clicked.connect(self.start_testing_sequence)
         self.layout.addWidget(self.start_button)
 
+        self.back_button = QtWidgets.QPushButton("MENÙ PRINCIPALE")
+        self.back_button.setMinimumHeight(50)
+        self.back_button.clicked.connect(self.go_back_signal.emit)
+        self.layout.addWidget(self.back_button)
+
         self.setLayout(self.layout)
+        
+        self.menu_buttons = [self.start_button, self.back_button]
+        self.menu_scan_index = 0
+
+        self.active_btn_style = "background-color: #0078d7; color: white; font-size: 24px; font-weight: bold; border: 3px solid white; border-radius: 10px; padding: 15px;"
+        self.inactive_btn_style = "background-color: #444; color: #ccc; font-size: 22px; font-weight: bold; border-radius: 10px; padding: 15px;"
+
+        for btn in self.menu_buttons:
+            btn.setStyleSheet(self.inactive_btn_style)
 
         # Logic Variables
         self.logger = None
         self.plotter = None
         self.trials = []
         self.current_trial_idx = 0
-        self.state = "IDLE"
+        self.state = "INITIALIZATION"
         self.state_start_time = 0.0
+        self.menu_scan_start_time = 0.0
 
         # Styles
         self.style_idle = "background-color: #2b2b2b; color: white;"
@@ -143,7 +154,8 @@ class TestingWidget(QtWidgets.QWidget):
 
         # Reset state but wait for user to click start button
         self.reset_logic()
-        self.state = "IDLE"
+        self.state = "INITIALIZATION"
+        self.state_start_time = time.time()
         self.message.setText("Premi 'Inizia' per cominciare")
     
     def end_session(self):
@@ -190,6 +202,7 @@ class TestingWidget(QtWidgets.QWidget):
         self.reset_logic()
 
     def reset_logic(self):
+        self.menu_scan_index = 0
         self.current_trial_idx = 0
         self.trials = [1,1,1,2,2]
         np.random.shuffle(self.trials)
@@ -257,11 +270,29 @@ class TestingWidget(QtWidgets.QWidget):
         elapsed = time.time() - self.state_start_time
 
         # --- STATE MACHINE ---
-        if self.state == "IDLE":
+        if self.state == "INITIALIZATION":
             self.monitor.baseline_collection(raw_area)
+            elapsed_scan = time.time() - self.menu_scan_start_time
+            if elapsed_scan >= 3:
+                self.menu_scan_start_time = time.time()
+                self.menu_scan_index = 1 - self.menu_scan_index # Toggles between 0 and 1
+                
+                # Update button colors based on which one is active
+                for i, btn in enumerate(self.menu_buttons):
+                    if i == self.menu_scan_index:
+                        btn.setStyleSheet(self.active_btn_style)
+                    else:
+                        btn.setStyleSheet(self.inactive_btn_style)
+
             if status == 1:
-                if self.logger: self.logger.log("Start triggered by Eye")
-                self.start_testing_sequence()
+                if self.menu_scan_index == 0:
+                    if self.logger: self.logger.log("Start triggered")
+                    self.start_testing_sequence()
+                elif self.menu_scan_index == 1:
+                    print("Exit triggered via visual scan")
+                    self.end_session()
+                    self.go_back_signal.emit()
+                return
 
         elif self.state == "BASELINE":
             self.monitor.baseline_collection(raw_area)
@@ -331,7 +362,7 @@ class TestingWidget(QtWidgets.QWidget):
         elif self.state == "COOLDOWN":
             remaining = self.t_far_interval - elapsed
             self.message.setText(f"Attendi. {remaining: .2f}s...")
-            frame_instruction_code = "FAR" # <-- Added so it logs "FAR" for the whole interval
+            frame_instruction_code = "FAR" 
 
             if remaining <= 0:
                 self.current_trial_idx += 1
@@ -340,7 +371,7 @@ class TestingWidget(QtWidgets.QWidget):
                 else:
                     self.next_trial()
 
-        if self.state not in ["IDLE", "BASELINE", "FINISHED", "COMPLETED_IDLE"]:
+        if self.state not in ["INITIALIZATION", "BASELINE", "FINISHED", "COMPLETED_IDLE"]:
             if raw_x != 0 and raw_y != 0:
                 current_dist = np.sqrt((raw_x - self.center_x)**2 + (raw_y - self.center_y)**2)
                 
@@ -386,9 +417,25 @@ class TestingWidget(QtWidgets.QWidget):
                 self.logger.log(f"Final Score: {self.correct_constrictions}/5")
 
             self.state = "COMPLETED_IDLE"
+            self.state_start_time = time.time()
             self.end_session()
+
+        if self.state == "COMPLETED_IDLE":
+            for btn in self.menu_buttons:
+                btn.setStyleSheet(self.inactive_btn_style)
+            elapsed = time.time() - self.state_start_time
+            if elapsed >= 5:
+                self.state = "INITIALIZATION"
+                self.state_start_time = time.time()
+                self.menu_scan_start_time = time.time()
 
     def next_trial(self):
         """Prepares state for the next trial"""
         self.state = "INSTRUCTION_NEAR"
         self.state_start_time = time.time()
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    ex = TestingWidget()
+    ex.show()
+    sys.exit(app.exec_())
