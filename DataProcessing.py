@@ -106,7 +106,6 @@ class ConstrictionMonitor:
         self.extra_dur = extra_dur
         self.device_type = device_type
         self.baseline_buffer = deque(maxlen=round(self.fps*2)) # last 1 seconds buffer
-        self.filter = AreaFilter(fps=self.fps, device_type=self.device_type)
         self.drop_start_time = None
         self.short_trigger_handled = False
         self.long_trigger_handled = False
@@ -122,17 +121,16 @@ class ConstrictionMonitor:
         self.extra_trigger_handled = False
         #self.baseline_buffer.clear() # Critical: forces a fresh threshold calculation
 
-    def baseline_collection(self, area):
-        last_val = self.filter.area_filtering(area)
+    def baseline_collection(self, filt_area):
 
         # safety check for startup/empty data
-        if last_val is None or last_val == 0:
+        if filt_area is None or filt_area == 0:
             return False
         # collect baseline data for first 2 seconds
         if len(self.baseline_buffer) < self.fps*2:
-            self.baseline_buffer.append(last_val)
+            self.baseline_buffer.append(filt_area)
 
-    def constriction_detector(self, area):
+    def constriction_detector(self, filt_area):
 
         """Returns:
         0 = No event
@@ -140,11 +138,8 @@ class ConstrictionMonitor:
         2 = Long constriction 
         3 = Special feature for keyboard"""
 
-        # get filtered data
-        last_val = self.filter.area_filtering(area)
-
         # safety check for startup/empty data
-        if last_val is None or last_val == 0:
+        if filt_area is None or filt_area == 0:
             return 0
 
         if len(self.baseline_buffer) > 0:
@@ -159,9 +154,9 @@ class ConstrictionMonitor:
             active_thresh = self.exit_thresh
 
         # check whether last value is below threshold
-        if last_val < active_thresh:
+        if filt_area < active_thresh:
             # check whether this is the first below threshold
-            self.above_ma = (last_val > self.current_sma_thresh)
+            self.above_ma = (filt_area > self.current_sma_thresh)
             if self.drop_start_time is None:
                 self.drop_start_time = time.time()
                 self.exit_thresh = self.current_sma_thresh
@@ -182,7 +177,7 @@ class ConstrictionMonitor:
                 self.short_trigger_handled = False
                 self.long_trigger_handled = False
                 self.extra_trigger_handled = False
-                self.baseline_buffer.append(last_val)
+                self.baseline_buffer.append(filt_area)
                 return 0
 
             if elapsed >= self.extra_dur:
@@ -203,7 +198,7 @@ class ConstrictionMonitor:
                     print("Short constriction detected.")
                     self.short_trigger_handled = True
                     return 1
-            self.baseline_buffer.append(last_val) # add value to keep calculating moving average
+            self.baseline_buffer.append(filt_area) # add value to keep calculating moving average
         else:
             # reset timer
             self.exit_thresh = None
@@ -211,7 +206,7 @@ class ConstrictionMonitor:
             self.short_trigger_handled = False
             self.long_trigger_handled = False
             self.extra_trigger_handled = False
-            self.baseline_buffer.append(last_val)
+            self.baseline_buffer.append(filt_area)
         return 0 # no new event.
 
 # ---------------------------------------------------------

@@ -367,14 +367,14 @@ class MainMenuWidget(QtWidgets.QWidget):
         if not self.system_armed:
             self.instruction_label.setText("Premi DISPOSITIVO PRONTO per iniziare")
         else:
-            status = self.monitor.constriction_detector(raw_area)
+            status = self.monitor.constriction_detector(area)
             machine_status = f"ARMED_{self.state}"
 
             if not getattr(self, 'settings_open', False):
                 # State Machine
                 if self.state == "INITIALIZATION":
                     self.live_label.setText("Inizializzazione Menu... Guarda lontano")
-                    self.monitor.baseline_collection(raw_area)
+                    self.monitor.baseline_collection(area)
 
                     # use inactive style for all
                     for btn in self.scan_options: btn.setStyleSheet(self.inactive_style)
@@ -402,7 +402,7 @@ class MainMenuWidget(QtWidgets.QWidget):
                     remaining = self.t_init - (time.time() - self.state_start_time)
                     self.live_label.setText("Attendi {remaining: .1f}...")
 
-                    self.monitor.constriction_detector(raw_area)
+                    self.monitor.constriction_detector(area)
 
                     if remaining <= 0:
                         # re-initialization

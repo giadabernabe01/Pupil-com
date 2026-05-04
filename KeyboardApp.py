@@ -424,7 +424,7 @@ class KeyboardApp(QWidget):
         """Main update loop triggered by raw data input"""
         frame_output = 0
         area = self.filter.area_filtering(raw_area)
-        status = self.monitor.constriction_detector(raw_area)
+        status = self.monitor.constriction_detector(area)
         is_eye_constricted = self.monitor.drop_start_time is not None
 
         current_thresh = self.monitor.current_sma_thresh
@@ -440,7 +440,7 @@ class KeyboardApp(QWidget):
         # --- STATE MACHINE LOGIC ---
         if self.state == "INITIALIZATION":
             self.log_once("Initialization Started")
-            self.monitor.baseline_collection(raw_area)
+            self.monitor.baseline_collection(area)
             if time.time() - self.state_start_time >= self.t_init:
                 self.state = "KEYBOARD_ROW"
                 self.current_row_idx = -1

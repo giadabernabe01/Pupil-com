@@ -154,7 +154,7 @@ class GameWidget(QWidget):
         current_thresh = self.monitor.current_sma_thresh
         exit_thresh = self.monitor.exit_thresh
             
-        status = self.monitor.constriction_detector(raw_area)
+        status = self.monitor.constriction_detector(self.filtered_val)
         
         # Make the trigger "sticky" so Pygame doesn't miss it between frames
         if status != 0:
@@ -178,7 +178,7 @@ class GameWidget(QWidget):
             
         # --- PRE-GAME MENU STATE MACHINE ---
         if self.state == "INITIALIZATION":
-            self.monitor.baseline_collection(raw_area)
+            self.monitor.baseline_collection(self.filtered_val)
 
             elapsed = time.time() - self.state_start_time
             remaining = self.t_init - elapsed

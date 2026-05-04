@@ -259,7 +259,7 @@ class TestingWidget(QtWidgets.QWidget):
         self.area_label.setText(f"Area registrata: {val:.2f}")
         self.digital_eye.update_eye(raw_x, raw_y, val)
 
-        status = self.monitor.constriction_detector(raw_area)
+        status = self.monitor.constriction_detector(area)
     
         current_thresh = self.monitor.current_sma_thresh
         exit_thresh = self.monitor.exit_thresh
@@ -271,7 +271,7 @@ class TestingWidget(QtWidgets.QWidget):
 
         # --- STATE MACHINE ---
         if self.state == "INITIALIZATION":
-            self.monitor.baseline_collection(raw_area)
+            self.monitor.baseline_collection(area)
             elapsed_scan = time.time() - self.menu_scan_start_time
             if elapsed_scan >= 3:
                 self.menu_scan_start_time = time.time()
@@ -295,7 +295,7 @@ class TestingWidget(QtWidgets.QWidget):
                 return
 
         elif self.state == "BASELINE":
-            self.monitor.baseline_collection(raw_area)
+            self.monitor.baseline_collection(area)
             if raw_x != 0 and raw_y != 0:
                 self.baseline_x.append(raw_x)
                 self.baseline_y.append(raw_y)
