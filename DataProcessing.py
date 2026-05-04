@@ -148,10 +148,10 @@ class ConstrictionMonitor:
         else:
             self.current_sma_thresh = 0.0
 
-        if self.drop_start_time is None:
-            active_thresh = self.current_sma_thresh
-        else:
+        if self.short_trigger_handled and self.exit_thresh is not None:
             active_thresh = self.exit_thresh
+        else:
+            active_thresh = self.current_sma_thresh
 
         # check whether last value is below threshold
         if filt_area < active_thresh:
