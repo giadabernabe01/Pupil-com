@@ -72,8 +72,8 @@ class YNWidget(QtWidgets.QWidget):
         self.active_style = "background-color: #0078d7; color: white;"
         self.inactive_style = "background-color: #333333; color: gray;"
         self.detected_style = "background-color: #1a1a1a; color: #555; border: 1px solid #333;" # Dark/Greyed out
-        self.yes_button.setStyleSheet(self.inactive_style)
-        self.no_button.setStyleSheet(self.inactive_style)
+        self.yes_button.setStyleSheet(self.active_style)
+        self.no_button.setStyleSheet(self.active_style)
 
         # Tools placeholders
         self.logger = None
@@ -331,8 +331,8 @@ class YNWidget(QtWidgets.QWidget):
         self.yes_button.setText("SI")
         self.no_button.setText("NO")
         self.ans_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
-        self.yes_button.setStyleSheet(self.inactive_style)
-        self.no_button.setStyleSheet(self.inactive_style)
+        self.yes_button.setStyleSheet(self.active_style)
+        self.no_button.setStyleSheet(self.active_style)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
