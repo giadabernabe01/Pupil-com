@@ -229,8 +229,8 @@ class GameWidget(QWidget):
                 self.reset_to_initialization()
 
         elif self.state == "WAIT_EXIT":
-            if status == 1 or status == 2:
-                if self.logger: self.logger.log("Exit Confirmation")
+            if time.time() - self.state_start_time >= 5:
+                if self.logger: self.logger.log("Back to game lobby")
                 self.trigger_cooldown()
 
     def clear_ui(self):
@@ -885,18 +885,19 @@ class GameWidget(QWidget):
     def end_game(self):
         print("Game Ending")
 
+        # Clear the previous UI using self.main_layout
+        self.clear_ui()
+
         # Save arrays (Legacy)
         # self.save_array(list(self.filter.pupil_areas_raw), "PupilAreas_raw.txt")
 
-        # 2. Save plot
+        # Save plot
         if self.plotter:
             self.plotter.save_plot()
             self.plotter = DataPlotter(self.foldername, f"Space Shuttle_{int(time.time())}")
 
-        # 3. Clear the previous UI using self.main_layout
-        self.clear_ui()
-
         # 4. Build the "Game Over" UI
+        self.state_start_time = time.time()
         welcome_message = QLabel("CONGRATULAZIONI!", self)
         welcome_message.setFont(QFont("Calibri", 30, weight=QFont.Bold))
         welcome_message.setAlignment(Qt.AlignCenter)
@@ -937,15 +938,15 @@ class GameWidget(QWidget):
         explanation_message.setAlignment(Qt.AlignCenter)        
         explanation_message.setStyleSheet("color: white;")
 
-        shutdown_button = QPushButton("Guarda vicino per uscire", self)
-        shutdown_button.setStyleSheet("background-color: #f48a94; color: black; border: none; padding: 30px; font-size: 30px; border-radius: 15px;")
-        shutdown_button.clicked.connect(self.trigger_cooldown)
+        #shutdown_button = QPushButton("Guarda vicino per uscire", self)
+        #shutdown_button.setStyleSheet("background-color: #f48a94; color: black; border: none; padding: 30px; font-size: 30px; border-radius: 15px;")
+        #shutdown_button.clicked.connect(self.trigger_cooldown)
 
         self.main_layout.addWidget(welcome_message)
         self.main_layout.addSpacing(25)
         self.main_layout.addWidget(explanation_message)
-        self.main_layout.addSpacing(25)
-        self.main_layout.addWidget(shutdown_button)
+        #self.main_layout.addSpacing(25)
+        #self.main_layout.addWidget(shutdown_button)
         
         # 5. THE EXIT LOOP
         self.monitor.reset_monitor()

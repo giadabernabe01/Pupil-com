@@ -318,6 +318,7 @@ class TestingWidget(QtWidgets.QWidget):
         elif self.state == "INSTRUCTION_NEAR":
             current_type = self.trials[self.current_trial_idx]
             type_str = "SHORT" if current_type == 1 else "LONG"
+            if self.plotter: self.plotter.mark_constriction_requests(type_str)
 
             self.message.setText(f"Task {self.current_trial_idx+1}/5: {type_str}\nGUARDA VICINO!")
             if self.logger: self.logger.log(f"Trial {self.current_trial_idx+1}: {type_str} - Audio NEAR")

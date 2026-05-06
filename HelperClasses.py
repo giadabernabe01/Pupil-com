@@ -53,6 +53,8 @@ class DataPlotter:
 
         self.short_constrictions = []
         self.long_constrictions = []
+        self.short_constriction_requests = []
+        self.long_constriction_requests = []
     
     def add_data(self, val, threshold, exit_threshold):
         t = time.time() - self.start_time
@@ -70,6 +72,13 @@ class DataPlotter:
             self.long_constrictions.append(t)
         else:
             self.short_constrictions.append(t)
+
+    def mark_constriction_requests(self, c_type):
+        t = time.time() - self.start_time
+        if c_type == 'LONG':
+            self.long_constriction_requests.append(t)
+        else:
+            self.short_constriction_requests.append(t)
 
     def save_plot(self):
         if not self.timestamps: return
@@ -90,6 +99,14 @@ class DataPlotter:
         for i, ct in enumerate(self.long_constrictions):
             label = 'Long Constriction' if i == 0 else ""
             plt.axvline(x=ct, color='green', linestyle='-', alpha=0.7, label=label)
+
+        # Add red/green dotted lines for constriction request (testing)
+        for i, ct in enumerate(self.short_constriction_requests):
+            label = 'Short constriction request' if i == 0 else ""
+            plt.axvline(x=ct, color='red', linestyle='--', alpha=0.7, label=label)
+        for i, ct in enumerate(self.long_constriction_requests):
+            label = 'Long constriction request' if i == 0 else ""
+            plt.axvline(x=ct, color='green', linestyle='--', alpha=0.7, label=label)
             
         plt.title(f"Session: {self.session_name}")
         plt.xlabel("Time (s)")

@@ -1,6 +1,6 @@
 {
     "constriction": {
-        "threshold": 0.8,
+        "threshold": 0.75,
         "short_constr_dur": 0.2,
         "long_constr_dur": 3.0,
         "gp3_fps": 60,
