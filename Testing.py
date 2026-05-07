@@ -177,7 +177,7 @@ class TestingWidget(QtWidgets.QWidget):
                 # Force the GUI to update immediately
                 QtWidgets.QApplication.processEvents()
 
-        if self.saver: self.saver.save_file()
+        if self.saver: self.saver.save_file("Constr_req")
 
         timestamp = datetime.datetime.now().strftime("%H%M%S")
 
@@ -262,7 +262,7 @@ class TestingWidget(QtWidgets.QWidget):
         status = self.monitor.constriction_detector(area)
     
         current_thresh = self.monitor.current_sma_thresh
-        exit_thresh = self.monitor.exit_thresh
+        exit_thresh = self.monitor.exit_thresh #if self.monitor.exit_thresh is not None else 0.0
 
         # Updating plotter
         if self.plotter: self.plotter.add_data(val, current_thresh, exit_thresh)
@@ -332,7 +332,7 @@ class TestingWidget(QtWidgets.QWidget):
         elif self.state == "HOLDING":
             current_type = self.trials[self.current_trial_idx]
             duration = self.t_short_task if current_type == 1 else self.t_long_task
-            frame_instruction_code = "NEAR_SHORT" if current_type == 1 else "NEAR_LONG"
+            frame_instruction_code = 1 if current_type == 1 else 2
 
             if status == 1:
                 if self.plotter: self.plotter.mark_constriction("short")
@@ -353,7 +353,7 @@ class TestingWidget(QtWidgets.QWidget):
         elif self.state == "INSTRUCTION_FAR":
             self.message.setText("Guarda Lontano")
             if self.logger: self.logger.log("Audio FAR")
-            frame_instruction_code = "FAR"
+            frame_instruction_code = 0
 
             self.play_audio_cue(self.player_far)
 
@@ -363,7 +363,7 @@ class TestingWidget(QtWidgets.QWidget):
         elif self.state == "COOLDOWN":
             remaining = self.t_far_interval - elapsed
             self.message.setText(f"Attendi. {remaining: .2f}s...")
-            frame_instruction_code = "FAR" 
+            frame_instruction_code = 0 
 
             if remaining <= 0:
                 self.current_trial_idx += 1
@@ -403,8 +403,8 @@ class TestingWidget(QtWidgets.QWidget):
                 current_thresh,
                 exit_thresh, 
                 status, 
-                frame_instruction_code,
                 #extra_value="", # Leave blank if unused
+                frame_instruction_code=frame_instruction_code,
                 gaze_x=raw_x,   # Pass X coordinate
                 gaze_y=raw_y    # Pass Y coordinate 
             )

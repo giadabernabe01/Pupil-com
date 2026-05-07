@@ -143,7 +143,7 @@ class DataSaver:
         self.data_rows = []
         self.start_time = time.time()
 
-    def add_data(self, raw, filtered, threshold, exit_threshold, event_code, extra_value="", gaze_x=None, gaze_y=None):
+    def add_data(self, raw, filtered, threshold, exit_threshold, event_code, extra_value= None, frame_instruction_code=None, gaze_x=None, gaze_y=None):
         """Call this every frame to record a data point."""
         timestamp = time.time()
         formatted_exit = f"{exit_threshold:.2f}" if exit_threshold is not None else ""
@@ -154,10 +154,13 @@ class DataSaver:
             f"{filtered:.2f}", 
             f"{threshold:.2f}",
             formatted_exit, 
-            event_code, 
-            extra_value        
+            event_code,       
         ]
 
+        if extra_value is not None:
+            row.extend([f"{extra_value}"])
+        if frame_instruction_code is not None:
+            row.extend([f"{frame_instruction_code}"])
         if gaze_x is not None and gaze_y is not None:
             row.extend([f"{gaze_x:.4f}", f"{gaze_y:.4f}"])
         
