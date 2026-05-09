@@ -20,7 +20,7 @@ class AreaFilter:
         self.max_array_len = 1000
         if device_type == "gazepoint":
             #print("Using Gazepoint min and max area values")
-            self.amin, self.amax = 50.0, 1000.0 # area is measured in mm^2
+            self.amin, self.amax = 100.0, 1000.0 # area is measured in mm^2
             self.ebf_thresh = 100.0
         else:
             #print("Using Pupil Core min and max area values")
@@ -62,7 +62,7 @@ class AreaFilter:
                         self.reject_count += 1
                         
                         # Max allowed consecutive rejected frames (0.5 seconds)
-                        max_rejects = int(self.fps / 2) 
+                        max_rejects = int(self.fps * 0.8) 
                         
                         if self.reject_count < max_rejects:
                             # It's a short spike/blink. Reject it and hold the old value.
