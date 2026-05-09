@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from DriveUploader import DriveUploaderThread
 
 ACTIVE_UPLOAD_THREADS = [] # Google Drive global variable
-
+USE_DRIVE = False
 MAIN_DRIVE_FOLDER_ID = "1VpNhj7DEMyA-NYGaMWn8563J0OqrOgbM"
 
 CURRENT_SESSION_DRIVE_FOLDER_ID = MAIN_DRIVE_FOLDER_ID

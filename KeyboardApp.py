@@ -378,7 +378,7 @@ class KeyboardApp(QWidget):
                     self.btn_esci.setStyleSheet(self.active_style)
 
     def set_ui_detected(self):
-        """Visual feedback: the UI freezes and the target buttons is highlighted as detected"""
+        """Visual feedback: the UI freezes and the target button is explicitly highlighted"""
         for btn in self.findChildren(QPushButton):
             if btn == self.back_button: continue
 
@@ -386,22 +386,24 @@ class KeyboardApp(QWidget):
             if self.state == "PAUSED" and btn not in (self.btn_riprendi, self.btn_esci): continue
 
             is_target = False
-            if self.state == "KEYBOARD_ROW":
+            if self.state == "KEYBOARD_ROW" and self.current_row_idx >= 0:
                 if self.current_row_idx < len(self.button_matrix):
                     is_target = (btn in self.button_matrix[self.current_row_idx])
                 else:
                     is_target = (btn in [self.space_btn, self.canc_button])
-            elif self.state == "KEYBOARD_COL":
+            elif self.state == "KEYBOARD_COL" and self.current_col_idx >= 0:
                 if self.current_row_idx < len(self.button_matrix):
                     is_target = (btn == self.button_matrix[self.current_row_idx][self.current_col_idx])
                 else:
                     is_target = (btn == (self.space_btn if self.current_col_idx == 0 else self.canc_button))
-            elif self.state == "SUGGESTIONS":
+            elif self.state == "SUGGESTIONS" and self.current_sugg_idx >= 0:
                 is_target = (btn == self.suggestion_widgets[self.current_sugg_idx])
             elif self.state == "PAUSED":
                 is_target = (btn == self.btn_riprendi if self.current_pause_opt == 0 else btn == self.btn_esci)
 
-            if not is_target:
+            if is_target:
+                btn.setStyleSheet(self.active_style)
+            else:
                 btn.setStyleSheet(self.detected_style)
 
     def reset_ui_styles(self):
@@ -426,6 +428,18 @@ class KeyboardApp(QWidget):
         area = self.filter.area_filtering(raw_area)
         status = self.monitor.constriction_detector(area)
         is_eye_constricted = self.monitor.drop_start_time is not None
+
+        invalid_state = (
+            (self.state == "KEYBOARD_ROW" and self.current_row_idx == -1) or
+            (self.state == "KEYBOARD_COL" and self.current_col_idx == -1) or
+            (self.state == "SUGGESTIONS" and self.current_sugg_idx == -1)
+        )
+        
+        if invalid_state and is_eye_constricted:
+            # Wipe the monitor and force the scanner to start ticking
+            self.monitor.reset_monitor()
+            status = 0
+            is_eye_constricted = False
 
         current_thresh = self.monitor.current_sma_thresh
         exit_thresh = self.monitor.exit_thresh

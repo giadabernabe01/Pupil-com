@@ -624,15 +624,15 @@ class MainWindow(QtWidgets.QMainWindow):
         # Set the local path inside the parent folder
         self.session_folder = os.path.join(parent_path, folder_name)
         # -----------------
-
-        try:
-            # Create the sub-folder on Drive inside the 'Experimental Results' folder
-            new_drive_id = create_drive_folder(folder_name, parent_id=HelperClasses.MAIN_DRIVE_FOLDER_ID)
-            HelperClasses.set_session_drive_folder(new_drive_id)
-            print("Drive folder created successfully!")
-        except Exception as e:
-            print(f"Could not create Drive folder (No internet?). Using main folder. Error: {e}")
-            HelperClasses.set_session_drive_folder(HelperClasses.MAIN_DRIVE_FOLDER_ID)
+        if HelperClasses.USE_DRIVE:
+            try:
+                # Create the sub-folder on Drive inside the 'Experimental Results' folder
+                new_drive_id = create_drive_folder(folder_name, parent_id=HelperClasses.MAIN_DRIVE_FOLDER_ID)
+                HelperClasses.set_session_drive_folder(new_drive_id)
+                print("Drive folder created successfully!")
+            except Exception as e:
+                print(f"Could not create Drive folder (No internet?). Using main folder. Error: {e}")
+                HelperClasses.set_session_drive_folder(HelperClasses.MAIN_DRIVE_FOLDER_ID)
 
         self.initialize_application()
 
@@ -647,15 +647,15 @@ class MainWindow(QtWidgets.QMainWindow):
         folder_name = f"{now_str}_{device_suffix}"
         self.session_folder = os.path.join(parent_path, folder_name)
         # -----------------
-
-        try:
-            print(f"Creating Drive folder for {folder_name}...")
-            new_drive_id = create_drive_folder(folder_name, parent_id=HelperClasses.MAIN_DRIVE_FOLDER_ID)
-            HelperClasses.set_session_drive_folder(new_drive_id)
-            print("Drive folder created successfully!")
-        except Exception as e:
-            print(f"Could not create Drive folder (No internet?). Using main folder. Error: {e}")
-            HelperClasses.set_session_drive_folder(HelperClasses.MAIN_DRIVE_FOLDER_ID)
+        if HelperClasses.USE_DRIVE:
+            try:
+                print(f"Creating Drive folder for {folder_name}...")
+                new_drive_id = create_drive_folder(folder_name, parent_id=HelperClasses.MAIN_DRIVE_FOLDER_ID)
+                HelperClasses.set_session_drive_folder(new_drive_id)
+                print("Drive folder created successfully!")
+            except Exception as e:
+                print(f"Could not create Drive folder (No internet?). Using main folder. Error: {e}")
+                HelperClasses.set_session_drive_folder(HelperClasses.MAIN_DRIVE_FOLDER_ID)
 
         self.initialize_application()
 
