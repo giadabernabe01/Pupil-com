@@ -11,7 +11,7 @@ from DataProcessing import AreaFilter, ConstrictionMonitor, GazepointReceiver
 from HelperClasses import SessionLogger, DataPlotter, DataSaver
 from DigitalEye import DigitalEyeWidget
 
-class TestingWidget(QtWidgets.QWidget):
+class TrainingWidget(QtWidgets.QWidget):
     go_back_signal = QtCore.pyqtSignal()
 
     def __init__(self, device_type="gazepoint"):
@@ -44,7 +44,7 @@ class TestingWidget(QtWidgets.QWidget):
         self.layout = QtWidgets.QVBoxLayout()
         self.layout.setAlignment(QtCore.Qt.AlignCenter)
 
-        title = QtWidgets.QLabel("Testing")
+        title = QtWidgets.QLabel("Training")
         title.setStyleSheet("font-size: 24px; font-weight: bold;")
         self.layout.addWidget(title)
 
@@ -82,7 +82,7 @@ class TestingWidget(QtWidgets.QWidget):
         # Buttons
         self.start_button = QtWidgets.QPushButton("INIZIA")
         self.start_button.setMinimumHeight(50)
-        self.start_button.clicked.connect(self.start_testing_sequence)
+        self.start_button.clicked.connect(self.start_training_sequence)
         self.layout.addWidget(self.start_button)
 
         self.back_button = QtWidgets.QPushButton("MENÙ PRINCIPALE")
@@ -128,10 +128,10 @@ class TestingWidget(QtWidgets.QWidget):
     def start_session(self, folder_path, params, device_type):
         """Called by MainWindow when entering this screen"""
         self.folder_path = folder_path
-        self.logger = SessionLogger(folder_path, "Testing")
-        self.plotter = DataPlotter(folder_path, "Testing")
-        self.saver = DataSaver(folder_path, "Testing")
-        self.logger.log("Testing Session Started")
+        self.logger = SessionLogger(folder_path, "Training")
+        self.plotter = DataPlotter(folder_path, "Training")
+        self.saver = DataSaver(folder_path, "Training")
+        self.logger.log("Training Session Started")
         
         # Retrieve parameters
         self.params = params
@@ -139,12 +139,12 @@ class TestingWidget(QtWidgets.QWidget):
         constrict_config = self.params.get("constriction", {})
         self.short = constrict_config.get("short_constr_dur", 0.5)
         self.long = constrict_config.get("long_constr_dur", 3.0)
-        testing_config = self.params.get("testing_widget", {})
-        self.t_init = testing_config.get("initialization_dur", 5.0)
+        training_config = self.params.get("training_widget", {})
+        self.t_init = training_config.get("initialization_dur", 5.0)
 
-        self.t_short_task = testing_config.get("short_task_dur", 3.5)
-        self.t_long_task = testing_config.get("long_task_dur", 6.0)
-        self.t_far_interval = testing_config.get("far_interval_dur", 4.0)
+        self.t_short_task = training_config.get("short_task_dur", 3.5)
+        self.t_long_task = training_config.get("long_task_dur", 6.0)
+        self.t_far_interval = training_config.get("far_interval_dur", 4.0)
 
         active_fps = self.params.get("active_fps", 60) 
         threshold = self.params["constriction"].get("threshold", 0.75)
@@ -160,7 +160,7 @@ class TestingWidget(QtWidgets.QWidget):
     
     def end_session(self):
         "Called by MainWindow when leaving"
-        if self.logger: self.logger.log("Testing Session Ended")
+        if self.logger: self.logger.log("Training Session Ended")
         if self.plotter: 
             self.plotter.save_plot()
             png_files = [os.path.join(self.folder_path, f) for f in os.listdir(self.folder_path) if f.endswith('.png')]
@@ -183,13 +183,13 @@ class TestingWidget(QtWidgets.QWidget):
 
         if self.raw_data_history and self.folder_path:
             try:
-                raw_name = f"Testing_Raw_{timestamp}.txt"
+                raw_name = f"Training_Raw_{timestamp}.txt"
                 np.savetxt(os.path.join(self.folder_path, raw_name), self.raw_data_history)
 
-                filt_name = f"Testing_filt_{timestamp}.txt"
+                filt_name = f"Training_filt_{timestamp}.txt"
                 np.savetxt(os.path.join(self.folder_path, filt_name), self.filtered_data_history)
 
-                time_name = f"Testing_Filtered_{timestamp}.txt"
+                time_name = f"Training_Filtered_{timestamp}.txt"
                 np.savetxt(os.path.join(self.folder_path, time_name), self.timestamps_history)
 
                 if self.logger: self.logger.log(f"Data saved: {raw_name}")
@@ -225,16 +225,16 @@ class TestingWidget(QtWidgets.QWidget):
         self.is_gaze_deviated = False
         self.gaze_dev_start_time = 0.0
 
-    def start_testing_sequence(self):
+    def start_training_sequence(self):
         """Triggered by the start button"""
         if self.logger is None and self.folder_path:
-            self.logger = SessionLogger(self.folder_path, "Testing")
-            self.logger.log("Testing Session Restarted")
+            self.logger = SessionLogger(self.folder_path, "training")
+            self.logger.log("training Session Restarted")
 
         if self.plotter is None and self.folder_path:
-            self.plotter = DataPlotter(self.folder_path, "Testing")
+            self.plotter = DataPlotter(self.folder_path, "training")
 
-        self.saver = DataSaver(self.folder_path, "Testing")
+        self.saver = DataSaver(self.folder_path, "training")
 
         self.start_button.setEnabled(False)
         self.start_button.hide()
@@ -311,7 +311,7 @@ class TestingWidget(QtWidgets.QWidget):
             if status == 1:
                 if self.menu_scan_index == 0:
                     if self.logger: self.logger.log("Start triggered")
-                    self.start_testing_sequence()
+                    self.start_training_sequence()
                 elif self.menu_scan_index == 1:
                     print("Exit triggered via visual scan")
                     self.end_session()
@@ -438,7 +438,7 @@ class TestingWidget(QtWidgets.QWidget):
             score_msg = f"Test Completato.\n Costrizioni rilevate correttamente: {self.correct_constrictions}/5"
             self.message.setText(score_msg)
             if self.logger: 
-                self.logger.log("Testing Trials completed")
+                self.logger.log("training Trials completed")
                 self.logger.log(f"Final Score: {self.correct_constrictions}/5")
 
             self.state = "COMPLETED_IDLE"
@@ -461,6 +461,6 @@ class TestingWidget(QtWidgets.QWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    ex = TestingWidget()
+    ex = TrainingWidget()
     ex.show()
     sys.exit(app.exec_())
