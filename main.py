@@ -13,6 +13,7 @@ from msgpack import loads
 from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore import QUrl
+from PyQt5.QtWidgets import QMessageBox
 from collections import deque
 from DataProcessing import AreaFilter, ConstrictionMonitor, GazepointReceiver, PupilLabsReceiver
 from DriveUploader import create_drive_folder
@@ -349,12 +350,36 @@ class MainMenuWidget(QtWidgets.QWidget):
                 btn.setStyleSheet(self.active_style)
             else:
                 btn.setStyleSheet(self.inactive_style)
+
+    def show_timeout_dialog(self):
+        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        
+        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Errore di Rilevamento")
+        msg.setText("Il sistema non riesce a rilevare correttamente la pupilla.\nControlla l'inquadratura e clicca riprova.")
+        
+        btn_retry = msg.addButton("Riprova", QMessageBox.AcceptRole)
+        msg.setStyleSheet("QLabel { color: white; font-size: 16px; } QPushButton { font-size: 16px; padding: 5px; }")
+        
+        # Execute popup
+        msg.exec_()
+        
+        self.filter.reset()
+        self.monitor.reset_monitor()
+        self.state_start_time = time.time()
     
     def update_data(self, raw_area, raw_x=0, raw_y=0):
         #This function is called by MainWindow to update live label and digital eye
         if hasattr(self, 'digital_eye'):
             self.digital_eye.update_eye(raw_x, raw_y, raw_area)
         area = self.filter.area_filtering(raw_area)
+
+        if self.filter.timeout_triggered:
+            self.show_timeout_dialog()
+            return
+        
         val =  area if area is not None else 0.0
         self.live_label.setText(f"Area registrata: {val: .2f}") 
 

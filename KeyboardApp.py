@@ -9,7 +9,7 @@ import winsound
 from autocorrect import Speller
 from wordfreq import top_n_list
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QGridLayout, QPushButton, QLineEdit, QLabel, QSizePolicy)
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QGridLayout, QPushButton, QLineEdit, QLabel, QSizePolicy, QMessageBox)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 from DataProcessing import AreaFilter, ConstrictionMonitor
@@ -422,10 +422,34 @@ class KeyboardApp(QWidget):
         self.btn_esci.setStyleSheet(self.inactive_style)
         self.monitor.reset_monitor()
 
+    def show_timeout_dialog(self):
+        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        
+        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Errore di Rilevamento")
+        msg.setText("Il sistema non riesce a rilevare correttamente la pupilla.\nControlla l'inquadratura e clicca riprova.")
+        
+        btn_retry = msg.addButton("Riprova", QMessageBox.AcceptRole)
+        msg.setStyleSheet("QLabel { color: white; font-size: 16px; } QPushButton { font-size: 16px; padding: 5px; }")
+        
+        # Execute popup
+        msg.exec_()
+        
+        self.filter.reset()
+        self.monitor.reset_monitor()
+        self.state_start_time = time.time()
+
     def update_data(self, raw_area):
         """Main update loop triggered by raw data input"""
         frame_output = 0
         area = self.filter.area_filtering(raw_area)
+
+        if self.filter.timeout_triggered:
+            self.show_timeout_dialog()
+            return
+        
         status = self.monitor.constriction_detector(area)
         is_eye_constricted = self.monitor.drop_start_time is not None
 

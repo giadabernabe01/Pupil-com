@@ -5,7 +5,7 @@ import datetime
 import time
 import random
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QApplication, QPushButton, QLabel
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QApplication, QPushButton, QLabel, QMessageBox
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QTimer
 from DataProcessing import AreaFilter, ConstrictionMonitor
@@ -145,11 +145,34 @@ class GameWidget(QWidget):
         """Slot to receive data from the receiver"""
         self.current_area = area
 
+    def show_timeout_dialog(self):
+        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        
+        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Errore di Rilevamento")
+        msg.setText("Il sistema non riesce a rilevare correttamente la pupilla.\nControlla l'inquadratura e clicca riprova.")
+        
+        btn_retry = msg.addButton("Riprova", QMessageBox.AcceptRole)
+        msg.setStyleSheet("QLabel { color: white; font-size: 16px; } QPushButton { font-size: 16px; padding: 5px; }")
+        
+        # Execute popup
+        msg.exec_()
+        
+        self.filter.reset()
+        self.monitor.reset_monitor()
+        self.state_start_time = time.time()
+
     def update_data(self, raw_area):
         self.current_area = raw_area # Always update local variable
 
         # 1. ALWAYS perform the math synced perfectly with the poll_timer!
         self.filtered_val = self.filter.area_filtering(raw_area)
+
+        if self.filter.timeout_triggered:
+            self.show_timeout_dialog()
+            return
         
         current_thresh = self.monitor.current_sma_thresh
         exit_thresh = self.monitor.exit_thresh

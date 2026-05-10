@@ -27,6 +27,9 @@ class AreaFilter:
             self.amin, self.amax = 1500.0, 10000.0 # area is measured in pixel units
             self.ebf_thresh = 500.0
         self.fps = fps
+        self.area_not_valid = False
+        self.area_not_valid_time = 0.0
+        self.timeout_triggered = False
         #filter initializations
         self.pupil_areas_raw = deque(maxlen=self.max_array_len)
         self.pupil_areas = deque(maxlen=self.max_array_len)
@@ -41,10 +44,21 @@ class AreaFilter:
         # Control on the pupil area with respect to physiological dimensions
         if self.amin <= new_area <= self.amax:
             self.pupil_areas.append(new_area)
+            if self.area_not_valid: # if the previous frame was invalid, reset flag and timer
+                self.area_not_valid = False
+                self.area_not_valid_time = 0.0
+                self.timeout_triggered = False 
         elif len(self.pupil_areas) > 0:
-            self.pupil_areas.append(self.pupil_areas[-1])
+            self.pupil_areas.append(self.pupil_areas[-1]) # temporarily store the previous valid frame
+            if not self.area_not_valid: # start counting for how long the frames are invalid
+                self.area_not_valid = True
+                self.area_not_valid_time = time.time()
+            else:
+                elapsed = time.time() - self.area_not_valid_time
+                if elapsed > 5 and not self.timeout_triggered:
+                    self.timeout_triggered = True
         else:
-            return new_area # no valid data yet
+            return new_area # no valid data yet --> temporarily fill with 
 
         if len(self.pupil_areas) > 0:
             
@@ -93,8 +107,12 @@ class AreaFilter:
     def reset(self):
         self.pupil_areas_raw.clear()
         self.pupil_areas.clear()
+        self.pupil_areas_diffs.clear()
         self.pupil_areas_ebf.clear()
         self.pupil_areas_fin.clear()
+        self.area_not_valid = False
+        self.area_not_valid_time = 0.0
+        self.timeout_triggered = False
 
 class ConstrictionMonitor:
     """Class for detecting pupil constriction and recovery events."""

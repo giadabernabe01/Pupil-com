@@ -7,7 +7,7 @@ import subprocess
 import os
 import matplotlib.pyplot as plt
 from PyQt5 import QtCore, QtWidgets, QtGui
-from PyQt5.QtWidgets import QSizePolicy, QApplication
+from PyQt5.QtWidgets import QSizePolicy, QApplication, QMessageBox
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore import QUrl
 from DataProcessing import AreaFilter, ConstrictionMonitor
@@ -189,9 +189,32 @@ class YNWidget(QtWidgets.QWidget):
         self.no_button.setStyleSheet(self.inactive_style)
         self.monitor.reset_monitor()
 
+    def show_timeout_dialog(self):
+        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        
+        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Errore di Rilevamento")
+        msg.setText("Il sistema non riesce a rilevare correttamente la pupilla.\nControlla l'inquadratura e clicca riprova.")
+        
+        btn_retry = msg.addButton("Riprova", QMessageBox.AcceptRole)
+        msg.setStyleSheet("QLabel { color: white; font-size: 16px; } QPushButton { font-size: 16px; padding: 5px; }")
+        
+        # Execute popup
+        msg.exec_()
+        
+        self.filter.reset()
+        self.monitor.reset_monitor()
+        self.state_start_time = time.time()
+
     def update_data(self, raw_area):
         frame_answer_code = 0
         area = self.filter.area_filtering(raw_area)
+        # Signal loss timeout check
+        if self.filter.timeout_triggered:
+            self.show_timeout_dialog()
+            return
         val = area if area is not None else 0.0
         self.area_label.setText(f"Area registrata: {val:.2f}")
         current_thresh = self.monitor.current_sma_thresh
