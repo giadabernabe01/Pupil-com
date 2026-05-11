@@ -18,7 +18,7 @@ from collections import deque
 from DataProcessing import AreaFilter, ConstrictionMonitor, GazepointReceiver, PupilLabsReceiver
 from DriveUploader import create_drive_folder
 import HelperClasses
-from HelperClasses import SessionLogger, DataPlotter, DataSaver
+from HelperClasses import SessionLogger, DataPlotter, DataSaver, TTSWorkerThread
 from Calibration import CalibrationWidget
 from ShuttleGame import GameWidget
 from YNWidget import YNWidget
@@ -107,6 +107,8 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type)
         self.logger = SessionLogger(folder_path, "MainMenu")
         self.saver = DataSaver(folder_path, "MainMenu")
+        self.player = QMediaPlayer()
+        self.last_spoken_index = -1
         self.system_armed = False
 
         gui_config = self.params.get("gui", {})
@@ -282,6 +284,7 @@ class MainMenuWidget(QtWidgets.QWidget):
             self.saver.save_file()
             if self.logger: self.logger.log("MainMenu CSV aggiornato su disco.")
 
+
     def set_device_type(self, new_device):
         """Hot-swap of ui without recreating the widget"""
         self.device_type = new_device
@@ -339,6 +342,36 @@ class MainMenuWidget(QtWidgets.QWidget):
         except:
             pass
 
+    def synthetise_word(self,word):
+        """Turns the word into a synthetised temporary .mp3 file to be read out loud by tts tool"""
+        if hasattr(self, 'tts_thread') and self.tts_thread.isRunning():
+            return
+        self.player.setMedia(QMediaContent())
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        import glob
+        for old_file in glob.glob(os.path.join(base_dir, "temp_speech_*.wav")):
+            try:
+                os.remove(old_file)
+            except OSError:
+                pass 
+                
+        unique_filename = f"temp_speech_{int(time.time() * 1000)}.wav"
+        temp_audio_path = os.path.join(base_dir, unique_filename)
+        self.tts_thread = TTSWorkerThread(word, temp_audio_path)
+        self.tts_thread.audio_ready_signal.connect(self.play_sound)
+        self.tts_thread.start()
+
+    def play_sound(self,file_path):
+        """Plays the audio file for the word that's just been written"""
+        if os.path.exists(file_path):
+            url = QUrl.fromLocalFile(file_path)
+            content = QMediaContent(url)
+            self.player.setMedia(content)
+            self.player.play()
+        else:
+            print(f"File audio non trovato: {file_path}")
+
     def update_visual_scanning(self):
         elapsed = time.time() - self.scan_start_time
         if elapsed >= self.t_scan:
@@ -348,6 +381,10 @@ class MainMenuWidget(QtWidgets.QWidget):
         for i, btn in enumerate(self.scan_options):
             if i == self.current_index:
                 btn.setStyleSheet(self.active_style)
+                if self.current_index != getattr(self, 'last_spoken_index', -1):
+                    word = btn.text()
+                    self.synthetise_word(word)
+                    self.last_spoken_index = self.current_index
             else:
                 btn.setStyleSheet(self.inactive_style)
 

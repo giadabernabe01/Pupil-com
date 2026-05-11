@@ -201,4 +201,27 @@ class DataSaver:
             print(f"Error saving CSV: {e}")
 
         
+from PyQt5.QtCore import QThread, pyqtSignal
+import pyttsx3
+import os
 
+class TTSWorkerThread(QThread):
+    audio_ready_signal = pyqtSignal(str) 
+
+    def __init__(self, text, file_path):
+        super().__init__()
+        self.text = text
+        self.file_path = file_path
+
+    def run(self):
+        # Il motore SAPI5 viene inizializzato QUI, isolato dalla GUI!
+        speaker = pyttsx3.init()
+        speaker.setProperty('voice', 'italian')
+        speaker.setProperty('rate', 150)
+        
+        # Genera il file wav
+        speaker.save_to_file(self.text, self.file_path)
+        speaker.runAndWait()
+        
+        # Manda il segnale alla GUI che il file è pronto
+        self.audio_ready_signal.emit(self.file_path)

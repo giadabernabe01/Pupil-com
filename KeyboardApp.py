@@ -9,11 +9,12 @@ import winsound
 from autocorrect import Speller
 from wordfreq import top_n_list
 from PyQt5 import QtCore, QtWidgets
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QGridLayout, QPushButton, QLineEdit, QLabel, QSizePolicy, QMessageBox)
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QFont
 from DataProcessing import AreaFilter, ConstrictionMonitor
-from HelperClasses import SessionLogger, DataPlotter, DataSaver
+from HelperClasses import SessionLogger, DataPlotter, DataSaver, TTSWorkerThread
 
 # in csv file add near/far instruction and written word/letter
 
@@ -25,6 +26,7 @@ class KeyboardApp(QWidget):
         # Tools initialization
         self.filter = AreaFilter(fps=130, device_type="gazepoint")
         self.monitor = ConstrictionMonitor(fps=130, thresh=0.75, device_type="gazepoint")
+        self.player = QMediaPlayer()
 
         # Suggestions hybrid logic setup
         self.spell = Speller(lang='it') # from autocorrect library
@@ -202,7 +204,37 @@ class KeyboardApp(QWidget):
     def play_sharp_beep(self):
         """Plays a high-pitch, short beep in a separate thread to prevent UI freezing"""
         # Frequency = 2000Hz (sharp), Duration = 80ms (very short)
-        threading.Thread(target=winsound.Beep, args=(2000, 80), daemon=True).start() 
+        threading.Thread(target=winsound.Beep, args=(2000, 80), daemon=True).start()
+
+    def synthetise_word(self,word):
+        """Turns the word into a synthetised temporary .mp3 file to be read out loud by tts tool"""
+        if hasattr(self, 'tts_thread') and self.tts_thread.isRunning():
+            return
+        self.player.setMedia(QMediaContent())
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        import glob
+        for old_file in glob.glob(os.path.join(base_dir, "temp_speech_*.wav")):
+            try:
+                os.remove(old_file)
+            except OSError:
+                pass 
+                
+        unique_filename = f"temp_speech_{int(time.time() * 1000)}.wav"
+        temp_audio_path = os.path.join(base_dir, unique_filename)
+        self.tts_thread = TTSWorkerThread(word, temp_audio_path)
+        self.tts_thread.audio_ready_signal.connect(self.play_sound)
+        self.tts_thread.start()
+
+    def play_sound(self,file_path):
+        """Plays the audio file for the word that's just been written"""
+        if os.path.exists(file_path):
+            url = QUrl.fromLocalFile(file_path)
+            content = QMediaContent(url)
+            self.player.setMedia(content)
+            self.player.play()
+        else:
+            print(f"File audio non trovato: {file_path}") 
 
     def start_session(self, folder_path, params, device_type):
         self.logger = SessionLogger(folder_path, "Keyboard_Widget")
@@ -277,11 +309,10 @@ class KeyboardApp(QWidget):
         for i, word in enumerate(word_list):
             btn = self.suggestion_widgets[i]
             btn.setText(word)
-            btn.setProperty("word_val", word)
 
     def process_suggestion_click(self,idx):
         btn = self.suggestion_widgets[idx]
-        word = btn.property("word_val")
+        word = btn.text()
         if word:
             print(f"DEBUG: Sggerimento cliccato: {word}")
             self.on_click_suggestion(word)
@@ -298,6 +329,7 @@ class KeyboardApp(QWidget):
             new_text = " ".join(words) + " "
 
         self.display.setText(new_text)
+        self.synthetise_word(word)
         self.update_suggestions()
         self.log_once(f"Word completed/replaced: {word}")
         self.next_state = "KEYBOARD_ROW"
@@ -665,23 +697,29 @@ class KeyboardApp(QWidget):
 
         if key == "CANC":
             self.log_once("Button clicked: CANC")
-            self.display.setText(current[:-1])
+            current = current[:-1]
+            self.display.setText(current)
             self.update_suggestions()
             self.next_state = "KEYBOARD_COL"
             self.current_col_idx = 0
         elif key == "FULL_CANC":
             self.log_once("Button clicked: CANC, FULL_CANC option --> word erased")
             if current.rfind(" ") != -1:
-                self.display.setText(current[:current.rfind(" ")]) # delete the fully last word
+                current = current[:current.rfind(" ")]
+                self.display.setText(current) # delete the fully last word
             else:
                 self.display.setText("")
             self.update_suggestions()
             self.next_state = "KEYBOARD_ROW"
         else:
-            self.display.setText(current+key)
+            current = current+key
+            self.display.setText(current)
             self.log_once(f"Button clicked. Current text: {self.display.text()}")
             self.update_suggestions()
             self.next_state = "KEYBOARD_ROW"
+
+        if len(current) > 1:
+            self.synthetise_word(current)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
