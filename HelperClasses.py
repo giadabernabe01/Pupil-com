@@ -110,7 +110,7 @@ class DataPlotter:
             
         plt.title(f"Session: {self.session_name}")
         plt.xlabel("Time (s)")
-        plt.ylabel("Pupil Area")
+        plt.ylabel("Pupil Area (pixels^2)")
         plt.legend()
         plt.grid(True)
 
