@@ -344,7 +344,7 @@ class TrainingWidget(QtWidgets.QWidget):
             type_str = "SHORT" if current_type == 1 else "LONG"
             if self.plotter: self.plotter.mark_constriction_requests(type_str)
 
-            self.message.setText(f"Task {self.current_trial_idx+1}/5: {type_str}\nGUARDA VICINO!")
+            self.message.setText(f"RICHIESTA {self.current_trial_idx+1}/5: GUARDA VICINO!")
             if self.logger: self.logger.log(f"Trial {self.current_trial_idx+1}: {type_str} - Audio NEAR")
 
             self.play_audio_cue(self.player_near)

@@ -36,7 +36,7 @@ class YNWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.label)
         self.setWindowTitle("Sì o No?")
 
-        self.area_label = QtWidgets.QLabel("Area Filtrata: 0.0")
+        self.area_label = QtWidgets.QLabel("Area: 0.0")
         self.layout.addWidget(self.area_label)
 
         self.ans_label = QtWidgets.QLabel("Acquisizione baseline\nGuarda lontano...")

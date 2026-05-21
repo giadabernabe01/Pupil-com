@@ -6,11 +6,39 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 class SettingsDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, params_file="parameters.json", current_device="gazepoint"):
         super().__init__(parent)
-        self.setWindowTitle("Global Settings")
+        self.setWindowTitle("Impostazioni globali")
         self.resize(500,400)
         self.params_file = params_file
         self.current_params = self.load_params()
         self.current_device = current_device # Store the current device
+
+        # Italian translations
+        self.translations = {
+            "constriction": "Costrizione Pupillare",
+            "gui": "Interfaccia",
+            "yn_widget":"Sì o No",
+            "keyboard_widget": "Tastiera",
+            "testing_widget": "Testing",
+            "active_fps": "FPS Attivi",
+            "short_constr_dur": "Durata Costrizione Breve",
+            "long_constr_dur": "Durata Costrizione Lunga",
+            "threshold": "Soglia",
+            "initialization_dur": "Tempo Inizializzazione",
+            "scan_interval_dur": "Intervallo Scansione",
+            "cooldown_dur": "Tempo Cooldown",
+            "max_loops": "Cicli Massimi",
+            "extra_trigger_dur": "Durata Costrizione Extra-Lunga",
+            "short_tasl_dur": "Durata Richiesta Breve",
+            "long_task_dur": "Durata Richiesta Lunga",
+            "far_interval_dur": "Durata Richiesta Lontano",
+            "game_widget": "Gioco",
+            "shuttle_speed": "Velocità astronave",
+            "planet_speed_base": "Velocità base pianeta",
+            "lives": "Numero vite",
+            "training_widget": "Training",
+            "calibration_widget": "Calibrazione",
+            "task_dur": "Durata richiesta"
+        }
 
         main_layout = QtWidgets.QVBoxLayout()
 
@@ -53,7 +81,8 @@ class SettingsDialog(QtWidgets.QDialog):
                 new_tab = QtWidgets.QWidget()
                 new_layout = QtWidgets.QVBoxLayout()
                 new_tab.setLayout(new_layout)
-                self.tabs.addTab(new_tab, section.replace("_", " ").title())
+                tab_title = self.translations.get(section, section.replace("_", " ").title())
+                self.tabs.addTab(new_tab, tab_title)
                 parent_layout = new_layout
                 group_title = "Parametri"
             
@@ -63,7 +92,8 @@ class SettingsDialog(QtWidgets.QDialog):
 
             for key, value in keys.items():
                 # clean up the label name
-                label_text = key.replace("_", " ").title()
+                fallback_text = key.replace("_", " ").title()
+                label_text = self.translations.get(key, fallback_text)
                 label = QtWidgets.QLabel(label_text)
 
                 if isinstance(value, int) and not isinstance(value, bool):
