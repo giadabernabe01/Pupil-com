@@ -188,11 +188,12 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.yn_button = QtWidgets.QPushButton("SI O NO")
         self.keyboard_button = QtWidgets.QPushButton("TASTIERA")
         self.game_button = QtWidgets.QPushButton("GIOCO")
-        self.calibration_button = QtWidgets.QPushButton("CALIBRAZIONE")
+        #self.calibration_button = QtWidgets.QPushButton("CALIBRAZIONE")
 
         size_policy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
-        for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button, self.calibration_button]:
+        for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button]:
+        #for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button, self.calibration_button]:
             btn.setEnabled(False)
             btn.setSizePolicy(size_policy) # Apply the expanding policy
             btn.setMinimumHeight(80)       # Never smaller than 80px (Good for Touch)
@@ -214,7 +215,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         grid_layout.addWidget(self.game_button, 1, 1)
 
         # Row 3 (Full Width)
-        grid_layout.addWidget(self.calibration_button, 2, 0, 1, 2)
+        #grid_layout.addWidget(self.calibration_button, 2, 0, 1, 2)
 
         # Add the grid to the main layout with a stretch factor equal to 1
         # This tells the layout: "Give the buttons as much space as possible"
@@ -252,8 +253,8 @@ class MainMenuWidget(QtWidgets.QWidget):
             self.training_button,
             self.yn_button, 
             self.keyboard_button, 
-            self.game_button,  
-            self.calibration_button
+            self.game_button  
+            #self.calibration_button
         ]
         self.current_index = 0
         self.scan_start_time = 0
@@ -302,7 +303,7 @@ class MainMenuWidget(QtWidgets.QWidget):
 
         self.instruction_label.setText("Sistema attivo")
 
-        self.calibration_button.setEnabled(True)
+        #self.calibration_button.setEnabled(True)
         self.yn_button.setEnabled(True)
         self.game_button.setEnabled(True)
         self.training_button.setEnabled(True)
@@ -315,13 +316,13 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.training_button.setEnabled(True)
         self.yn_button.setEnabled(True)
         self.game_button.setEnabled(True)
-        self.calibration_button.setEnabled(True)
+        #self.calibration_button.setEnabled(True)
         self.keyboard_button.setEnabled(True)
         
         self.training_button.setStyleSheet(self.inactive_style)
         self.yn_button.setStyleSheet(self.inactive_style)
         self.game_button.setStyleSheet(self.inactive_style)
-        self.calibration_button.setStyleSheet(self.inactive_style)
+        #self.calibration_button.setStyleSheet(self.inactive_style)
         self.keyboard_button.setStyleSheet(self.inactive_style)
 
         self.live_label.setText("Segnale: Connesso")
@@ -736,7 +737,7 @@ class MainWindow(QtWidgets.QMainWindow):
         width, height = screen_rect.width(), screen_rect.height()
 
         self.menu_widget = MainMenuWidget(self.session_folder, self.params, self.selected_device)
-        self.calibration_widget = CalibrationWidget()
+        #self.calibration_widget = CalibrationWidget()
         self.yn_widget = YNWidget()
         self.training_widget = TrainingWidget(device_type = self.selected_device)
         self.game_widget = GameWidget(width, height, self.session_folder)
@@ -744,23 +745,23 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Add them to the stack
         self.stack.addWidget(self.menu_widget)        # Index 1
-        self.stack.addWidget(self.calibration_widget) # Index 2
-        self.stack.addWidget(self.yn_widget)          # Index 3
-        self.stack.addWidget(self.game_widget)        # Index 4
-        self.stack.addWidget(self.training_widget)     # Index 5
-        self.stack.addWidget(self.keyboard_widget)    # Index 6
+        self.stack.addWidget(self.yn_widget)          # Index 2
+        self.stack.addWidget(self.game_widget)        # Index 3
+        self.stack.addWidget(self.training_widget)     # Index 4
+        self.stack.addWidget(self.keyboard_widget)    # Index 5
+        #self.stack.addWidget(self.calibration_widget) # Index 6
 
         # Navigation wiring
         # Main menu wirings
         self.menu_widget.settings_btn.clicked.connect(self.open_settings_window)
-        self.menu_widget.calibration_button.clicked.connect(self.open_calibration_widget)
+        #self.menu_widget.calibration_button.clicked.connect(self.open_calibration_widget)
         self.menu_widget.yn_button.clicked.connect(self.open_yn_widget)
         self.menu_widget.game_button.clicked.connect(self.open_game_widget)
         self.menu_widget.training_button.clicked.connect(self.open_training_widget)
         self.menu_widget.keyboard_button.clicked.connect(self.open_keyboard_widget)
         
         # Back buttons wirings
-        self.calibration_widget.back_btn.clicked.connect(self.go_home)
+        #self.calibration_widget.back_btn.clicked.connect(self.go_home)
         self.yn_widget.go_back_signal.connect(self.go_home)
         self.game_widget.go_back_signal.connect(self.go_home)
         self.training_widget.go_back_signal.connect(self.go_home)
@@ -797,14 +798,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def open_calibration_widget(self):
         self.menu_widget.end_session()
         self.main_logger.log("Opening Yes/No Widget")
-        self.stack.setCurrentIndex(2)
+        self.stack.setCurrentIndex(6)
         self.calibration_widget.start_session(self.session_folder, self.params, self.selected_device)
         
     def open_yn_widget(self):
         self.menu_widget.end_session()
         """Helper function to open widget and correctly initialise it"""
         self.main_logger.log("Opening Yes/No Widget")
-        self.stack.setCurrentIndex(3)
+        self.stack.setCurrentIndex(2)
         self.yn_widget.reset_to_initialization()
         self.yn_widget.start_session(self.session_folder, self.params, self.selected_device)
 
@@ -812,20 +813,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.menu_widget.end_session()
         """Helper function to open widget and correctly initialise it"""
         self.main_logger.log("Opening Shuttle Game Widget") 
-        self.stack.setCurrentIndex(4)
+        self.stack.setCurrentIndex(3)
         self.game_widget.start_session(self.session_folder, self.params, self.selected_device)
 
     def open_training_widget(self):
         self.menu_widget.end_session()
         """Helper function to open widget and correctly initialise it"""
         self.main_logger.log("Opening training Widget")
-        self.stack.setCurrentIndex(5)
+        self.stack.setCurrentIndex(4)
         self.training_widget.start_session(self.session_folder, self.params, self.selected_device)
 
     def open_keyboard_widget(self):
         self.menu_widget.end_session()
         self.main_logger.log("Opening training Widget")
-        self.stack.setCurrentIndex(6)
+        self.stack.setCurrentIndex(5)
         self.keyboard_widget.start_session(self.session_folder, self.params, self.selected_device)
     
     def apply_new_threshold(self, new_thresh):
