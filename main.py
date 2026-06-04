@@ -14,6 +14,7 @@ from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore import QUrl
 from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtGui import QIcon
 from collections import deque
 from DataProcessing import AreaFilter, ConstrictionMonitor, GazepointReceiver, PupilLabsReceiver
 from DriveUploader import create_drive_folder
@@ -544,8 +545,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.params = load_parameters()
-        #self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
-        self.setWindowTitle("Pupil Labs Manager")
+        self.setWindowTitle("Pupil-com")
+        try:
+            icon_path = os.path.join(os.path.dirname(__file__), "Images", "Pupil-com_icon.ico")
+            self.setWindowIcon(QIcon(icon_path))
+        except:
+            error_msg = "Icona non trovata. Controlla che 'Pupil-com_icon.ico' sia nella cartella Images."
+            print(error_msg)
         self.resize(800,600)
 
         """self.shutdown_btn = QtWidgets.QPushButton("X", self)

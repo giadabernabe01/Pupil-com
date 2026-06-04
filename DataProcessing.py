@@ -17,15 +17,16 @@ class AreaFilter:
     """Class for filtering pupil area data."""
     def __init__(self, fps=60, thresh=0.85, device_type="gazepoint"):
         
-        self.max_array_len = 1000
         if device_type == "gazepoint":
             #print("Using Gazepoint min and max area values")
             self.amin, self.amax = 50.0, 1000.0 # area is measured in square pixels
             self.ebf_thresh = 100.0
+            self.max_array_len = 1000
         else:
             #print("Using Pupil Core min and max area values")
-            self.amin, self.amax = 1500.0, 10000.0 # area is measured in pixel units
+            self.amin, self.amax = 1500.0, 10000.0 # area is measured in square pixels
             self.ebf_thresh = 500.0
+            self.max_array_len = 2000
         self.fps = fps
         self.area_not_valid = False
         self.area_not_valid_time = 0.0
@@ -58,7 +59,7 @@ class AreaFilter:
                 if elapsed > 5 and not self.timeout_triggered:
                     self.timeout_triggered = True
         else:
-            return new_area # no valid data yet --> temporarily fill with 
+            return new_area # no valid data yet --> temporarily fill with raw data
 
         if len(self.pupil_areas) > 0:
             
@@ -75,7 +76,7 @@ class AreaFilter:
                     if diff > self.ebf_thresh + baseline:
                         self.reject_count += 1
                         
-                        # Max allowed consecutive rejected frames (0.5 seconds)
+                        # Max allowed consecutive rejected frames (0.8 seconds)
                         max_rejects = int(self.fps * 0.8) 
                         
                         if self.reject_count < max_rejects:
