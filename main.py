@@ -533,7 +533,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         # Assicurandoci di rispettare quale bottone è attualmente "illuminato" dal visual scanner
         if hasattr(self, 'scan_options'):
             for i, btn in enumerate(self.scan_options):
-                if hasattr(self, 'current_index') and i == self.current_index:
+                if hasattr(self, 'current_index') and i == self.current_index and self.system_armed:
                     btn.setStyleSheet(self.active_style)
                 else:
                     btn.setStyleSheet(self.inactive_style)

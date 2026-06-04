@@ -41,14 +41,14 @@ class KeyboardApp(QWidget):
 
         # Layout setup
         self.layout = QVBoxLayout()
-        self.label = QLabel("SCRIVI QUELLO CHE VUOI")
+        self.label = QLabel("TASTIERA")
         self.label.setFont(QFont('Arial', 16, QFont.Bold))
         self.label.setStyleSheet('color: white;')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
         
         # Live status label (added as it was referenced in your update_data)
-        self.live_label = QLabel("INITIALIZING...")
+        self.live_label = QLabel("INIZIALIZZANDO...")
         self.live_label.setStyleSheet('color: #aaa; font-size: 14px;')
         self.live_label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.live_label)
