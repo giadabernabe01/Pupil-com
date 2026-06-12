@@ -28,7 +28,7 @@ class SettingsDialog(QtWidgets.QDialog):
             "cooldown_dur": "Tempo Cooldown",
             "max_loops": "Cicli Massimi",
             "extra_trigger_dur": "Durata Costrizione Extra-Lunga",
-            "short_tasl_dur": "Durata Richiesta Breve",
+            "short_task_dur": "Durata Richiesta Breve",
             "long_task_dur": "Durata Richiesta Lunga",
             "far_interval_dur": "Durata Richiesta Lontano",
             "game_widget": "Gioco",
@@ -53,7 +53,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.general_tab = QtWidgets.QWidget()
         self.general_layout = QtWidgets.QVBoxLayout()
         self.general_tab.setLayout(self.general_layout)
-        self.tabs.addTab(self.general_tab, "Impostazioni generali")
+        self.tabs.addTab(self.general_tab, "Generali")
 
         # 2. ADDED DEVICE SWITCHER UI to the top of General tab
         dev_group = QtWidgets.QGroupBox("Dispositivo Attivo")
@@ -76,7 +76,10 @@ class SettingsDialog(QtWidgets.QDialog):
         for section, keys in self.current_params.items():
             if section in ["constriction", "gui"]:
                 parent_layout = self.general_layout
-                group_title = section.upper()
+                if section == "constriction":
+                    group_title = "COSTRIZIONE"
+                else:
+                    group_title = "INTERFACCIA"
             else:
                 new_tab = QtWidgets.QWidget()
                 new_layout = QtWidgets.QVBoxLayout()
@@ -91,6 +94,8 @@ class SettingsDialog(QtWidgets.QDialog):
             form_layout = QtWidgets.QFormLayout()
 
             for key, value in keys.items():
+                if key in ["gp3_fps", "pupilcore_fps"]:
+                    continue
                 # clean up the label name
                 fallback_text = key.replace("_", " ").title()
                 label_text = self.translations.get(key, fallback_text)

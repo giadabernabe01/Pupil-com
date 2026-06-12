@@ -7,18 +7,18 @@
         "pupilcore_fps": 120
     },
     "yn_widget": {
+        "initialization_dur": 2.0,
         "scan_interval_dur": 3.5,
-        "cooldown_dur": 1.5,
-        "initialization_dur": 2.0
+        "cooldown_dur": 1.5
     },
     "gui": {
-        "scan_interval_dur": 3.0,
-        "initialization_dur": 2.5
+        "initialization_dur": 2.5,
+        "scan_interval_dur": 3.0
     },
     "keyboard_widget": {
+        "initialization_dur": 2.5,
         "max_loops": 2,
         "scan_interval_dur": 1.5,
-        "initialization_dur": 2.5,
         "cooldown_dur": 0.0,
         "extra_trigger_dur": 5.0
     },
