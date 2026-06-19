@@ -62,6 +62,8 @@ class YNWidget(QtWidgets.QWidget):
         self.state = "INITIALIZATION" # options: INITIALIZATION, SCANNING, COOLDOWN
         self.state_start_time = time.time()
         self.pending_selection = False
+        self.qa_counter = 0
+        self.advance_trial = False
 
         # SCANNING VARIABLES
         self.current_option = "YES" # options: YES, NO
@@ -81,6 +83,10 @@ class YNWidget(QtWidgets.QWidget):
         self.saver = None
 
         self.setLayout(self.layout)
+
+    def mousePressEvent(self, event):
+        """Metodo nativo di PyQt: scatta solo quando l'utente clicca il widget"""
+        self.advance_trial = True
 
     def resizeEvent(self, event):
         """Dynamically scales all text to fit the screen size"""
@@ -230,11 +236,15 @@ class YNWidget(QtWidgets.QWidget):
 
             self.monitor.baseline_collection(raw_area)
 
-            if time.time() - self.state_start_time > self.t_init:
-                if self.logger: self.logger.log("Initialization completed. New question.")
+            #if time.time() - self.state_start_time > self.t_init:
+            if self.advance_trial:
+                self.advance_trial = False
+                self.qa_counter+=1
+                if self.logger: self.logger.log(f"Question {self.qa_counter} asked. Moving to answer {self.qa_counter}.")
                 self.state = "SCANNING"
                 self.current_option = "YES"
                 self.scan_start_time = time.time()
+                self.state_start_time = time.time()
                 self.ans_label.setText("Guarda vicino quando la tua risposta è illuminata.")
         
         elif self.state == "SCANNING":
@@ -254,7 +264,8 @@ class YNWidget(QtWidgets.QWidget):
                 return
             
             elif not is_constricted and self.pending_selection:
-                if self.logger: self.logger.log(f"Short constriction confirmed. Answer: {self.current_option}")
+                elapsed = time.time() - self.state_start_time
+                if self.logger: self.logger.log(f"Short constriction confirmed. Answer: {self.current_option} to question {self.qa_counter}. Provided in: {elapsed} s")
                 self.ans_label.setText(f"Hai risposto: {self.current_option}")
                 self.ans_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
 
@@ -329,10 +340,12 @@ class YNWidget(QtWidgets.QWidget):
             # Wait 5 seconds before restarting the loop
             remaining = self.t_cool - (time.time() - self.state_start_time)
             self.ans_label.setText(f"Rispondi a un'altra domanda tra {remaining: .1f}...")
+            #self.ans_label.setText("Ascolta la prossima domanda")
 
             if remaining <=0:
+                self.advance_trial= False
                 # reset for new acquisition
-                if self.logger : self.logger.log("Cooldown completed. Re-initialising...")
+                #if self.logger : self.logger.log(f"Question {self.qa_counter} sked. Moving to answer {self.qa_counter}")
                 self.reset_to_initialization()
 
         # Save data to CSV
