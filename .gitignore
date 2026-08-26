@@ -2,7 +2,6 @@ credentials.json
 token.json
 token.pickle
 Experimental_Results/
-Images/
 venv/
 .vscode/
 build/
