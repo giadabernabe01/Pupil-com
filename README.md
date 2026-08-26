@@ -78,4 +78,4 @@ If you use this work, codebase, or method in an academic context, please cite:
 ```
 
 ## LICENSE
-This project is released under the MIT license. See the LICENSE file for details.
+This project is released under the MIT license. See the [LICENSE](LICENSE) file for details.
