@@ -13,18 +13,21 @@ from msgpack import loads
 from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore import QUrl
+from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtGui import QIcon
 from collections import deque
 from DataProcessing import AreaFilter, ConstrictionMonitor, GazepointReceiver, PupilLabsReceiver
 from DriveUploader import create_drive_folder
 import HelperClasses
-from HelperClasses import SessionLogger, DataPlotter, DataSaver
+from HelperClasses import SessionLogger, DataPlotter, DataSaver, TTSWorkerThread
 from Calibration import CalibrationWidget
 from ShuttleGame import GameWidget
 from YNWidget import YNWidget
-from Testing import TestingWidget
+from Training import TrainingWidget
 from KeyboardApp import KeyboardApp
 from StartupScreen import StartupWidget
 from SettingsDialog import SettingsDialog
+from DigitalEye import DigitalEyeWidget
 
 # ---------------------------------------------------------
 # SUBJECT DATA HANDLER
@@ -105,6 +108,8 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type)
         self.logger = SessionLogger(folder_path, "MainMenu")
         self.saver = DataSaver(folder_path, "MainMenu")
+        self.player = QMediaPlayer()
+        self.last_spoken_index = -1
         self.system_armed = False
 
         gui_config = self.params.get("gui", {})
@@ -136,8 +141,8 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.settings_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent; 
-                color: #aaaaaa; 
-                font-size: 35px; 
+                color: #aaaaaa;
+                font-size: 45px;
                 font-weight: bold;
                 border: none;
             }
@@ -149,6 +154,16 @@ class MainMenuWidget(QtWidgets.QWidget):
         header_layout.addWidget(self.settings_btn)
         
         self.main_layout.addLayout(header_layout)
+
+        # Add Digital Twin to Main Menu
+        self.digital_eye = DigitalEyeWidget(device_type=self.device_type)
+        self.main_layout.addWidget(self.digital_eye, alignment=QtCore.Qt.AlignCenter)
+
+        #Add red fixation dot to Main Menu
+        self.fixation_dot = QtWidgets.QLabel()
+        self.fixation_dot.setFixedSize(16, 16)
+        self.fixation_dot.setStyleSheet("background-color: red; border-radius: 8px;")
+        self.main_layout.addWidget(self.fixation_dot, alignment=QtCore.Qt.AlignCenter)
 
         # --- STATUS LABELS ---
         status_layout = QtWidgets.QHBoxLayout()
@@ -170,15 +185,16 @@ class MainMenuWidget(QtWidgets.QWidget):
         grid_layout.setSpacing(15)
 
         # Initialize Buttons
+        self.training_button = QtWidgets.QPushButton("TRAINING")
         self.yn_button = QtWidgets.QPushButton("SI O NO")
         self.keyboard_button = QtWidgets.QPushButton("TASTIERA")
         self.game_button = QtWidgets.QPushButton("GIOCO")
-        self.testing_button = QtWidgets.QPushButton("TESTING")
-        self.calibration_button = QtWidgets.QPushButton("CALIBRAZIONE")
+        #self.calibration_button = QtWidgets.QPushButton("CALIBRAZIONE")
 
         size_policy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
-        for btn in [self.yn_button, self.keyboard_button, self.game_button, self.testing_button, self.calibration_button]:
+        for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button]:
+        #for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button, self.calibration_button]:
             btn.setEnabled(False)
             btn.setSizePolicy(size_policy) # Apply the expanding policy
             btn.setMinimumHeight(80)       # Never smaller than 80px (Good for Touch)
@@ -187,21 +203,20 @@ class MainMenuWidget(QtWidgets.QWidget):
                     background-color: #444; 
                     color: #888; 
                     border-radius: 10px; 
-                    font-size: 22px; 
                     font-weight: bold;
                 }
             """)
 
         # Row 1
-        grid_layout.addWidget(self.yn_button, 0, 0)
-        grid_layout.addWidget(self.keyboard_button, 0, 1)
+        grid_layout.addWidget(self.training_button, 0, 0)
+        grid_layout.addWidget(self.yn_button, 0, 1)
 
         # Row 2
-        grid_layout.addWidget(self.game_button, 1, 0)
-        grid_layout.addWidget(self.testing_button, 1, 1)
+        grid_layout.addWidget(self.keyboard_button, 1, 0)
+        grid_layout.addWidget(self.game_button, 1, 1)
 
         # Row 3 (Full Width)
-        grid_layout.addWidget(self.calibration_button, 2, 0, 1, 2)
+        #grid_layout.addWidget(self.calibration_button, 2, 0, 1, 2)
 
         # Add the grid to the main layout with a stretch factor equal to 1
         # This tells the layout: "Give the buttons as much space as possible"
@@ -219,12 +234,12 @@ class MainMenuWidget(QtWidgets.QWidget):
 
         self.launch_button = QtWidgets.QPushButton("Avvia dispositivo")
         self.launch_button.setMinimumHeight(60)
-        self.launch_button.setStyleSheet("background-color: #333; color: #aaa; border: 1px solid #555; font-size: 16px;")
+        self.launch_button.setStyleSheet("background-color: #333; color: #aaa; border: 1px solid #555;")
         self.launch_button.clicked.connect(self.launch_software)
         
         self.ready_btn = QtWidgets.QPushButton("Dispositivo pronto")
         self.ready_btn.setMinimumHeight(60)
-        self.ready_btn.setStyleSheet("background-color: #28a745; color: white; font-size: 18px; font-weight: bold;")
+        self.ready_btn.setStyleSheet("background-color: #28a745; color: white; font-weight: bold;")
         self.ready_btn.clicked.connect(self.arm_system)
 
         footer_layout.addWidget(self.launch_button)
@@ -236,11 +251,11 @@ class MainMenuWidget(QtWidgets.QWidget):
 
         # Scanning setup
         self.scan_options = [
+            self.training_button,
             self.yn_button, 
             self.keyboard_button, 
-            self.game_button, 
-            self.testing_button, 
-            self.calibration_button
+            self.game_button  
+            #self.calibration_button
         ]
         self.current_index = 0
         self.scan_start_time = 0
@@ -251,15 +266,13 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.active_style = """
             background-color: #0078d7; 
             color: white; 
-            font-size: 24px; 
             font-weight: bold;
             border: 3px solid white;
             border-radius: 10px;
         """
         self.inactive_style = """
             background-color: #444; 
-            color: #ccc; 
-            font-size: 22px; 
+            color: #ccc;
             font-weight: bold;
             border-radius: 10px;
         """
@@ -273,6 +286,7 @@ class MainMenuWidget(QtWidgets.QWidget):
             self.saver.save_file()
             if self.logger: self.logger.log("MainMenu CSV aggiornato su disco.")
 
+
     def set_device_type(self, new_device):
         """Hot-swap of ui without recreating the widget"""
         self.device_type = new_device
@@ -284,37 +298,39 @@ class MainMenuWidget(QtWidgets.QWidget):
         """Activates pupil tracking when system is armed"""
         self.system_armed = True
         self.ready_btn.hide()
+        self.launch_button.hide()
 
         self.monitor.reset_monitor()
 
         self.instruction_label.setText("Sistema attivo")
 
-        self.calibration_button.setEnabled(True)
+        #self.calibration_button.setEnabled(True)
         self.yn_button.setEnabled(True)
         self.game_button.setEnabled(True)
-        self.testing_button.setEnabled(True)
+        self.training_button.setEnabled(True)
         self.keyboard_button.setEnabled(True)
 
         if self.logger: self.logger.log("System Armed manually: Glasses ready.")
 
     def enable_menu(self):
         """ Called when Gazepoint is connected"""
+        self.training_button.setEnabled(True)
         self.yn_button.setEnabled(True)
         self.game_button.setEnabled(True)
-        self.calibration_button.setEnabled(True)
-        self.testing_button.setEnabled(True)
+        #self.calibration_button.setEnabled(True)
         self.keyboard_button.setEnabled(True)
-
+        
+        self.training_button.setStyleSheet(self.inactive_style)
         self.yn_button.setStyleSheet(self.inactive_style)
         self.game_button.setStyleSheet(self.inactive_style)
-        self.calibration_button.setStyleSheet(self.inactive_style)
-        self.testing_button.setStyleSheet(self.inactive_style)
+        #self.calibration_button.setStyleSheet(self.inactive_style)
         self.keyboard_button.setStyleSheet(self.inactive_style)
 
         self.live_label.setText("Segnale: Connesso")
 
     def check_pupil_process(self):
         """Checks if the acquisition software is running and disables the button if true"""
+        self.launch_button.show()
         try:
             output = subprocess.check_output("tasklist", shell = True).decode()
             if "Gazepoint.exe" in output or "pupil_capture.exe" in output:
@@ -328,6 +344,36 @@ class MainMenuWidget(QtWidgets.QWidget):
         except:
             pass
 
+    def synthetise_word(self,word):
+        """Turns the word into a synthetised temporary .mp3 file to be read out loud by tts tool"""
+        if hasattr(self, 'tts_thread') and self.tts_thread.isRunning():
+            return
+        self.player.setMedia(QMediaContent())
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        import glob
+        for old_file in glob.glob(os.path.join(base_dir, "temp_speech_*.wav")):
+            try:
+                os.remove(old_file)
+            except OSError:
+                pass 
+                
+        unique_filename = f"temp_speech_{int(time.time() * 1000)}.wav"
+        temp_audio_path = os.path.join(base_dir, unique_filename)
+        self.tts_thread = TTSWorkerThread(word, temp_audio_path)
+        self.tts_thread.audio_ready_signal.connect(self.play_sound)
+        self.tts_thread.start()
+
+    def play_sound(self,file_path):
+        """Plays the audio file for the word that's just been written"""
+        if os.path.exists(file_path):
+            url = QUrl.fromLocalFile(file_path)
+            content = QMediaContent(url)
+            self.player.setMedia(content)
+            self.player.play()
+        else:
+            print(f"File audio non trovato: {file_path}")
+
     def update_visual_scanning(self):
         elapsed = time.time() - self.scan_start_time
         if elapsed >= self.t_scan:
@@ -337,18 +383,47 @@ class MainMenuWidget(QtWidgets.QWidget):
         for i, btn in enumerate(self.scan_options):
             if i == self.current_index:
                 btn.setStyleSheet(self.active_style)
+                if self.current_index != getattr(self, 'last_spoken_index', -1):
+                    word = btn.text()
+                    self.synthetise_word(word)
+                    self.last_spoken_index = self.current_index
             else:
                 btn.setStyleSheet(self.inactive_style)
+
+    def show_timeout_dialog(self):
+        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        
+        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Errore di Rilevamento")
+        msg.setText("Il sistema non riesce a rilevare correttamente la pupilla.\nControlla l'inquadratura e clicca riprova.")
+        
+        btn_retry = msg.addButton("Riprova", QMessageBox.AcceptRole)
+        msg.setStyleSheet("QLabel { color: white; font-size: 16px; } QPushButton { font-size: 16px; padding: 5px; }")
+        
+        # Execute popup
+        msg.exec_()
+        
+        self.filter.reset()
+        self.monitor.reset_monitor()
+        self.state_start_time = time.time()
     
-    def update_data(self, raw_area):
-        #This function is called by MainWindow to update live label
+    def update_data(self, raw_area, raw_x=0, raw_y=0):
+        #This function is called by MainWindow to update live label and digital eye
+        if hasattr(self, 'digital_eye'):
+            self.digital_eye.update_eye(raw_x, raw_y, raw_area)
         area = self.filter.area_filtering(raw_area)
+
+        if self.filter.timeout_triggered:
+            self.show_timeout_dialog()
+            return
+        
         val =  area if area is not None else 0.0
         self.live_label.setText(f"Area registrata: {val: .2f}") 
 
-        current_thresh = 0.0
-        if len(self.monitor.baseline_buffer) > 0:
-            current_thresh = np.mean(self.monitor.baseline_buffer) * self.monitor.thresh
+        current_thresh = self.monitor.current_sma_thresh
+        exit_thresh = self.monitor.exit_thresh
 
         machine_status = "UNARMED"
         status = 0
@@ -356,55 +431,56 @@ class MainMenuWidget(QtWidgets.QWidget):
         if not self.system_armed:
             self.instruction_label.setText("Premi DISPOSITIVO PRONTO per iniziare")
         else:
-            status = self.monitor.constriction_detector(raw_area)
+            status = self.monitor.constriction_detector(area)
             machine_status = f"ARMED_{self.state}"
 
-            # State Machine
-            if self.state == "INITIALIZATION":
-                self.live_label.setText("Inizializzazione Menu... Guarda lontano")
-                self.monitor.baseline_collection(raw_area)
+            if not getattr(self, 'settings_open', False):
+                # State Machine
+                if self.state == "INITIALIZATION":
+                    self.live_label.setText("Inizializzazione Menu... Guarda lontano")
+                    self.monitor.baseline_collection(area)
 
-                # use inactive style for all
-                for btn in self.scan_options: btn.setStyleSheet(self.inactive_style)
+                    # use inactive style for all
+                    for btn in self.scan_options: btn.setStyleSheet(self.inactive_style)
 
-                if time.time() - self.state_start_time > self.t_init:
-                    self.state = "SCANNING"
-                    self.scan_start_time = time.time()
-                    self.current_index = 0
-                    self.live_label.setText("Menu Attivo: Seleziona l'opzione desiderata")
+                    if time.time() - self.state_start_time > self.t_init:
+                        self.state = "SCANNING"
+                        self.scan_start_time = time.time()
+                        self.current_index = 0
+                        self.live_label.setText("Menu Attivo: Seleziona l'opzione desiderata")
 
-            elif self.state == "SCANNING":
-                self.update_visual_scanning()
+                elif self.state == "SCANNING":
+                    self.update_visual_scanning()
 
-                # Trigger Logic
-                if status == 1:
-                    selected_btn = self.scan_options[self.current_index]
-                    print(f"Menu: Selezionato {selected_btn.text()}")
+                    # Trigger Logic
+                    if status == 1:
+                        selected_btn = self.scan_options[self.current_index]
+                        print(f"Menu: Selezionato {selected_btn.text()}")
 
-                    selected_btn.click()
+                        selected_btn.click()
 
-                    self.state = "COOLDOWN"
-                    self.state_start_time = time.time()
+                        self.state = "COOLDOWN"
+                        self.state_start_time = time.time()
 
-            elif self.state == "COOLDOWN":
-                remaining = self.t_init - (time.time() - self.state_start_time)
-                self.live_label.setText("Attendi {remaining: .1f}...")
+                elif self.state == "COOLDOWN":
+                    remaining = self.t_init - (time.time() - self.state_start_time)
+                    self.live_label.setText("Attendi {remaining: .1f}...")
 
-                self.monitor.constriction_detector(raw_area)
+                    self.monitor.constriction_detector(area)
 
-                if remaining <= 0:
-                    # re-initialization
-                    self.monitor.baseline_buffer.clear()
-                    self.monitor.long_trigger_handled = False
-                    self.monitor.short_trigger_handled = False
-                    self.state = "INITIALIZATION"
-                    self.state_start_time = time.time()
-                    
-                    # re-check process status
-                    self.check_pupil_process()
+                    if remaining <= 0:
+                        # re-initialization
+                        self.monitor.baseline_buffer.clear()
+                        self.monitor.long_trigger_handled = False
+                        self.monitor.short_trigger_handled = False
+                        self.state = "INITIALIZATION"
+                        self.state_start_time = time.time()
+                        
+                        # re-check process status
+                        self.check_pupil_process()
 
         if hasattr(self, 'saver') and self.saver:
-            self.saver.add_data(raw_area, val, current_thresh, status, machine_status)                
+            self.saver.add_data(raw_area, val, current_thresh, exit_thresh, status, machine_status)                
 
     def launch_software(self):
         if self.device_type == "gazepoint":
@@ -428,6 +504,40 @@ class MainMenuWidget(QtWidgets.QWidget):
             self.label.setText("Software non trovato. Controlla il percorso.")
             self.logger.log(f"Error: {self.device_type} path not found")
 
+    def resizeEvent(self, event):
+        """Scala dinamicamente il testo e aggiorna gli stili del visual scanner"""
+        super().resizeEvent(event)
+        
+        # 1. Calcola la dimensione del font come percentuale dell'altezza della finestra
+        window_height = self.height()
+        button_font_size = max(14, int(window_height * 0.03))
+        
+        # 2. Aggiorna i template di stile aggiungendo il nuovo font-size dinamico
+        self.active_style = f"""
+            background-color: #0078d7; 
+            color: white; 
+            font-size: {button_font_size}px;
+            font-weight: bold;
+            border: 3px solid white;
+            border-radius: 10px;
+        """
+        self.inactive_style = f"""
+            background-color: #444; 
+            color: #ccc;
+            font-size: {button_font_size}px;
+            font-weight: bold;
+            border-radius: 10px;
+        """
+        
+        # 3. Riapplica immediatamente gli stili ai bottoni per aggiornarli a schermo
+        # Assicurandoci di rispettare quale bottone è attualmente "illuminato" dal visual scanner
+        if hasattr(self, 'scan_options'):
+            for i, btn in enumerate(self.scan_options):
+                if hasattr(self, 'current_index') and i == self.current_index and self.system_armed:
+                    btn.setStyleSheet(self.active_style)
+                else:
+                    btn.setStyleSheet(self.inactive_style)
+
 # ---------------------------------------------------------
 # MAIN WINDOW WIDGET
 # ---------------------------------------------------------
@@ -435,8 +545,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.params = load_parameters()
-        #self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
-        self.setWindowTitle("Pupil Labs Manager")
+        self.setWindowTitle("Pupil-com")
+        try:
+            icon_path = os.path.join(os.path.dirname(__file__), "Images", "Pupil-com_icon.ico")
+            self.setWindowIcon(QIcon(icon_path))
+        except:
+            error_msg = "Icona non trovata. Controlla che 'Pupil-com_icon.ico' sia nella cartella Images."
+            print(error_msg)
         self.resize(800,600)
 
         """self.shutdown_btn = QtWidgets.QPushButton("X", self)
@@ -448,8 +563,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QPushButton {
                 background-color: #ff4444; 
                 color: white; 
-                font-weight: bold; 
-                font-size: 20px;
+                font-weight: bold;
                 border: none;
                 border-bottom-left-radius: 10px;
             }
@@ -472,16 +586,33 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.showFullScreen()
 
     def open_settings_window(self):
+        # 1. TURN ON THE BLINDFOLD
+        self.menu_widget.settings_open = True
+        if hasattr(self.menu_widget, 'monitor'):
+            self.menu_widget.monitor.reset_monitor()
+
         # Pass the currently active device into the dialog
         dialog = SettingsDialog(self, params_file="parameters.json", current_device=self.selected_device)
 
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+        # 2. FREEZE AND WAIT FOR USER
+        result = dialog.exec_() # Script pauses here until dialog closes
+
+        # 3. TURN OFF THE BLINDFOLD (Always runs, whether they hit Save or Cancel)
+        self.menu_widget.settings_open = False
+
+        # 4. PROCESS THE SETTINGS IF THEY HIT SAVE
+        if result == QtWidgets.QDialog.Accepted:
             print("Reloading parameters...")
             self.params = load_parameters()
             
             gui_config = self.params.get("gui", {})
             self.menu_widget.t_scan = gui_config.get("scan_interval_dur", 3.5)
             self.menu_widget.t_init = gui_config.get("initialization_dur", 3.0)
+            
+            # --- EXTRACT MISSING VARIABLES FOR THE MONITOR ---
+            constrict_config = self.params.get("constriction", {})
+            self.short = constrict_config.get("short_constr_dur", 0.5)
+            self.long = constrict_config.get("long_constr_dur", 3.0)
 
             # --- DEVICE HOT-SWAP LOGIC ---
             new_device = dialog.get_selected_device()
@@ -505,7 +636,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 
                 # 2. Overwrite the MainMenu's filters with the new FPS parameters
                 self.menu_widget.filter = AreaFilter(fps=active_fps, device_type=self.selected_device)
-                self.menu_widget.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.selected_device)
+                self.menu_widget.monitor = ConstrictionMonitor(
+                    fps=active_fps, 
+                    thresh=threshold, 
+                    device_type=self.selected_device, 
+                    short_dur=self.short, 
+                    long_dur=self.long
+                )
                 
                 # 3. Stop the polling timer so it doesn't try to pull from a dying thread
                 if hasattr(self, 'poll_timer'):
@@ -537,15 +674,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 if hasattr(self, 'poll_timer'):
                     self.poll_timer.start(33) # Resume ~30 FPS UI updates
 
-    def resizeEvent(self, event):
-        """Called automatically whenever the window size changes"""
-        # Check if the button exists before trying to move it
-        if hasattr(self, 'shutdown_btn'):
-            self.shutdown_btn.move(self.width() - 50, 0)
-            self.shutdown_btn.raise_()
-        
-        super().resizeEvent(event)
+        # 5. FINAL RESET TO CLEAR GHOST INPUTS
+        if hasattr(self.menu_widget, 'monitor'):
+            self.menu_widget.monitor.reset_monitor()
 
+            
     def setup_subject_session(self, subject_name, device_type):
         """Called when user enters a name"""
         self.selected_device = device_type
@@ -560,15 +693,15 @@ class MainWindow(QtWidgets.QMainWindow):
         # Set the local path inside the parent folder
         self.session_folder = os.path.join(parent_path, folder_name)
         # -----------------
-
-        try:
-            # Create the sub-folder on Drive inside the 'Experimental Results' folder
-            new_drive_id = create_drive_folder(folder_name, parent_id=HelperClasses.MAIN_DRIVE_FOLDER_ID)
-            HelperClasses.set_session_drive_folder(new_drive_id)
-            print("Drive folder created successfully!")
-        except Exception as e:
-            print(f"Could not create Drive folder (No internet?). Using main folder. Error: {e}")
-            HelperClasses.set_session_drive_folder(HelperClasses.MAIN_DRIVE_FOLDER_ID)
+        if HelperClasses.USE_DRIVE:
+            try:
+                # Create the sub-folder on Drive inside the 'Experimental Results' folder
+                new_drive_id = create_drive_folder(folder_name, parent_id=HelperClasses.MAIN_DRIVE_FOLDER_ID)
+                HelperClasses.set_session_drive_folder(new_drive_id)
+                print("Drive folder created successfully!")
+            except Exception as e:
+                print(f"Could not create Drive folder (No internet?). Using main folder. Error: {e}")
+                HelperClasses.set_session_drive_folder(HelperClasses.MAIN_DRIVE_FOLDER_ID)
 
         self.initialize_application()
 
@@ -583,15 +716,15 @@ class MainWindow(QtWidgets.QMainWindow):
         folder_name = f"{now_str}_{device_suffix}"
         self.session_folder = os.path.join(parent_path, folder_name)
         # -----------------
-
-        try:
-            print(f"Creating Drive folder for {folder_name}...")
-            new_drive_id = create_drive_folder(folder_name, parent_id=HelperClasses.MAIN_DRIVE_FOLDER_ID)
-            HelperClasses.set_session_drive_folder(new_drive_id)
-            print("Drive folder created successfully!")
-        except Exception as e:
-            print(f"Could not create Drive folder (No internet?). Using main folder. Error: {e}")
-            HelperClasses.set_session_drive_folder(HelperClasses.MAIN_DRIVE_FOLDER_ID)
+        if HelperClasses.USE_DRIVE:
+            try:
+                print(f"Creating Drive folder for {folder_name}...")
+                new_drive_id = create_drive_folder(folder_name, parent_id=HelperClasses.MAIN_DRIVE_FOLDER_ID)
+                HelperClasses.set_session_drive_folder(new_drive_id)
+                print("Drive folder created successfully!")
+            except Exception as e:
+                print(f"Could not create Drive folder (No internet?). Using main folder. Error: {e}")
+                HelperClasses.set_session_drive_folder(HelperClasses.MAIN_DRIVE_FOLDER_ID)
 
         self.initialize_application()
 
@@ -610,34 +743,34 @@ class MainWindow(QtWidgets.QMainWindow):
         width, height = screen_rect.width(), screen_rect.height()
 
         self.menu_widget = MainMenuWidget(self.session_folder, self.params, self.selected_device)
-        self.calibration_widget = CalibrationWidget()
+        #self.calibration_widget = CalibrationWidget()
         self.yn_widget = YNWidget()
-        self.testing_widget = TestingWidget()
+        self.training_widget = TrainingWidget(device_type = self.selected_device)
         self.game_widget = GameWidget(width, height, self.session_folder)
         self.keyboard_widget = KeyboardApp()
         
         # Add them to the stack
         self.stack.addWidget(self.menu_widget)        # Index 1
-        self.stack.addWidget(self.calibration_widget) # Index 2
-        self.stack.addWidget(self.yn_widget)          # Index 3
-        self.stack.addWidget(self.game_widget)        # Index 4
-        self.stack.addWidget(self.testing_widget)     # Index 5
-        self.stack.addWidget(self.keyboard_widget)    # Index 6
+        self.stack.addWidget(self.yn_widget)          # Index 2
+        self.stack.addWidget(self.game_widget)        # Index 3
+        self.stack.addWidget(self.training_widget)     # Index 4
+        self.stack.addWidget(self.keyboard_widget)    # Index 5
+        #self.stack.addWidget(self.calibration_widget) # Index 6
 
         # Navigation wiring
         # Main menu wirings
         self.menu_widget.settings_btn.clicked.connect(self.open_settings_window)
-        self.menu_widget.calibration_button.clicked.connect(self.open_calibration_widget)
+        #self.menu_widget.calibration_button.clicked.connect(self.open_calibration_widget)
         self.menu_widget.yn_button.clicked.connect(self.open_yn_widget)
         self.menu_widget.game_button.clicked.connect(self.open_game_widget)
-        self.menu_widget.testing_button.clicked.connect(self.open_testing_widget)
+        self.menu_widget.training_button.clicked.connect(self.open_training_widget)
         self.menu_widget.keyboard_button.clicked.connect(self.open_keyboard_widget)
         
         # Back buttons wirings
-        self.calibration_widget.back_btn.clicked.connect(self.go_home)
+        #self.calibration_widget.back_btn.clicked.connect(self.go_home)
         self.yn_widget.go_back_signal.connect(self.go_home)
         self.game_widget.go_back_signal.connect(self.go_home)
-        self.testing_widget.go_back_signal.connect(self.go_home)
+        self.training_widget.go_back_signal.connect(self.go_home)
         self.keyboard_widget.go_back_signal.connect(self.go_home)
         
         # Receiver setup
@@ -671,14 +804,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def open_calibration_widget(self):
         self.menu_widget.end_session()
         self.main_logger.log("Opening Yes/No Widget")
-        self.stack.setCurrentIndex(2)
+        self.stack.setCurrentIndex(6)
         self.calibration_widget.start_session(self.session_folder, self.params, self.selected_device)
         
     def open_yn_widget(self):
         self.menu_widget.end_session()
         """Helper function to open widget and correctly initialise it"""
         self.main_logger.log("Opening Yes/No Widget")
-        self.stack.setCurrentIndex(3)
+        self.stack.setCurrentIndex(2)
         self.yn_widget.reset_to_initialization()
         self.yn_widget.start_session(self.session_folder, self.params, self.selected_device)
 
@@ -686,20 +819,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.menu_widget.end_session()
         """Helper function to open widget and correctly initialise it"""
         self.main_logger.log("Opening Shuttle Game Widget") 
-        self.stack.setCurrentIndex(4)
+        self.stack.setCurrentIndex(3)
         self.game_widget.start_session(self.session_folder, self.params, self.selected_device)
 
-    def open_testing_widget(self):
+    def open_training_widget(self):
         self.menu_widget.end_session()
         """Helper function to open widget and correctly initialise it"""
-        self.main_logger.log("Opening testing Widget")
-        self.stack.setCurrentIndex(5)
-        self.testing_widget.start_session(self.session_folder, self.params, self.selected_device)
+        self.main_logger.log("Opening training Widget")
+        self.stack.setCurrentIndex(4)
+        self.training_widget.start_session(self.session_folder, self.params, self.selected_device)
 
     def open_keyboard_widget(self):
         self.menu_widget.end_session()
-        self.main_logger.log("Opening testing Widget")
-        self.stack.setCurrentIndex(6)
+        self.main_logger.log("Opening training Widget")
+        self.stack.setCurrentIndex(5)
         self.keyboard_widget.start_session(self.session_folder, self.params, self.selected_device)
     
     def apply_new_threshold(self, new_thresh):
@@ -739,8 +872,8 @@ class MainWindow(QtWidgets.QMainWindow):
         
         current_widget = self.stack.currentWidget() 
         if hasattr(current_widget, 'update_data'):
-            # Pass coordinates to TestingWidget
-            if isinstance(current_widget, TestingWidget):
+            # Pass coordinates to TrainingWidget
+            if isinstance(current_widget, TrainingWidget) or isinstance(current_widget, MainMenuWidget):
                 current_widget.update_data(area, raw_x=x, raw_y=y)
             else:
                 # Everything else only gets area
@@ -867,7 +1000,6 @@ if __name__ == "__main__":
                 border-radius: 8px;
                 border: 2px solid #005a9e;
                 color: white;
-                font-size: 16px;
                 padding: 10px;
                 min-height: 40px;
             }

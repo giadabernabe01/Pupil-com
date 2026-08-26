@@ -17,16 +17,20 @@ class AreaFilter:
     """Class for filtering pupil area data."""
     def __init__(self, fps=60, thresh=0.85, device_type="gazepoint"):
         
-        self.max_array_len = 1000
         if device_type == "gazepoint":
             #print("Using Gazepoint min and max area values")
-            self.amin, self.amax = 100.0, 1000.0 # area is measured in mm^2
+            self.amin, self.amax = 50.0, 1000.0 # area is measured in square pixels
             self.ebf_thresh = 100.0
+            self.max_array_len = 1000
         else:
             #print("Using Pupil Core min and max area values")
-            self.amin, self.amax = 1500.0, 10000.0 # area is measured in pixel units
+            self.amin, self.amax = 1500.0, 10000.0 # area is measured in square pixels
             self.ebf_thresh = 500.0
+            self.max_array_len = 2000
         self.fps = fps
+        self.area_not_valid = False
+        self.area_not_valid_time = 0.0
+        self.timeout_triggered = False
         #filter initializations
         self.pupil_areas_raw = deque(maxlen=self.max_array_len)
         self.pupil_areas = deque(maxlen=self.max_array_len)
@@ -41,10 +45,21 @@ class AreaFilter:
         # Control on the pupil area with respect to physiological dimensions
         if self.amin <= new_area <= self.amax:
             self.pupil_areas.append(new_area)
+            if self.area_not_valid: # if the previous frame was invalid, reset flag and timer
+                self.area_not_valid = False
+                self.area_not_valid_time = 0.0
+                self.timeout_triggered = False 
         elif len(self.pupil_areas) > 0:
-            self.pupil_areas.append(self.pupil_areas[-1])
+            self.pupil_areas.append(self.pupil_areas[-1]) # temporarily store the previous valid frame
+            if not self.area_not_valid: # start counting for how long the frames are invalid
+                self.area_not_valid = True
+                self.area_not_valid_time = time.time()
+            else:
+                elapsed = time.time() - self.area_not_valid_time
+                if elapsed > 5 and not self.timeout_triggered:
+                    self.timeout_triggered = True
         else:
-            return new_area # no valid data yet
+            return new_area # no valid data yet --> temporarily fill with raw data
 
         if len(self.pupil_areas) > 0:
             
@@ -61,8 +76,8 @@ class AreaFilter:
                     if diff > self.ebf_thresh + baseline:
                         self.reject_count += 1
                         
-                        # Max allowed consecutive rejected frames (0.5 seconds)
-                        max_rejects = int(self.fps / 2) 
+                        # Max allowed consecutive rejected frames (0.8 seconds)
+                        max_rejects = int(self.fps * 0.8) 
                         
                         if self.reject_count < max_rejects:
                             # It's a short spike/blink. Reject it and hold the old value.
@@ -93,8 +108,12 @@ class AreaFilter:
     def reset(self):
         self.pupil_areas_raw.clear()
         self.pupil_areas.clear()
+        self.pupil_areas_diffs.clear()
         self.pupil_areas_ebf.clear()
         self.pupil_areas_fin.clear()
+        self.area_not_valid = False
+        self.area_not_valid_time = 0.0
+        self.timeout_triggered = False
 
 class ConstrictionMonitor:
     """Class for detecting pupil constriction and recovery events."""
@@ -105,12 +124,13 @@ class ConstrictionMonitor:
         self.long_dur = long_dur
         self.extra_dur = extra_dur
         self.device_type = device_type
-        self.baseline_buffer = deque(maxlen=self.fps*2) # last 2 seconds buffer
-        self.filter = AreaFilter(fps=self.fps, device_type=self.device_type)
+        self.baseline_buffer = deque(maxlen=round(self.fps*2)) # last 1 seconds buffer
         self.drop_start_time = None
         self.short_trigger_handled = False
         self.long_trigger_handled = False
         self.extra_trigger_handled = False
+        self.current_sma_thresh = 0.0
+        self.exit_thresh = None
 
     def reset_monitor(self):
         """Resets internal timers and flags."""
@@ -118,21 +138,18 @@ class ConstrictionMonitor:
         self.short_trigger_handled = False
         self.long_trigger_handled = False
         self.extra_trigger_handled = False
-        self.baseline_buffer.clear() # Critical: forces a fresh threshold calculation
+        #self.baseline_buffer.clear() # Critical: forces a fresh threshold calculation
 
-    def baseline_collection(self, area):
-        last_val = self.filter.area_filtering(area)
+    def baseline_collection(self, filt_area):
 
         # safety check for startup/empty data
-        if last_val is None or last_val == 0:
+        if filt_area is None or filt_area == 0:
             return False
         # collect baseline data for first 2 seconds
         if len(self.baseline_buffer) < self.fps*2:
-            self.baseline_buffer.append(last_val)
-        else:
-            print("Baseline acquisita.")
+            self.baseline_buffer.append(filt_area)
 
-    def constriction_detector(self, area):
+    def constriction_detector(self, filt_area):
 
         """Returns:
         0 = No event
@@ -140,26 +157,48 @@ class ConstrictionMonitor:
         2 = Long constriction 
         3 = Special feature for keyboard"""
 
-        # get filtered data
-        last_val = self.filter.area_filtering(area)
-
         # safety check for startup/empty data
-        if last_val is None or last_val == 0:
+        if filt_area is None or filt_area == 0:
             return 0
 
-        # calculate threshold value
         if len(self.baseline_buffer) > 0:
-            thresh_val = np.mean(self.baseline_buffer) * self.thresh
+            current_mean = np.mean(self.baseline_buffer) 
+            self.current_sma_thresh = current_mean * self.thresh 
         else:
-            thresh_val = 0
+            self.current_sma_thresh = 0.0
+
+        if self.short_trigger_handled and self.exit_thresh is not None:
+            active_thresh = self.exit_thresh
+        else:
+            active_thresh = self.current_sma_thresh
 
         # check whether last value is below threshold
-        if last_val < thresh_val:
+        if filt_area < active_thresh:
             # check whether this is the first below threshold
+            self.above_ma = (filt_area > self.current_sma_thresh)
             if self.drop_start_time is None:
                 self.drop_start_time = time.time()
+                self.exit_thresh = self.current_sma_thresh
+                self.above_ma = False
+                self.cross_count = 0
             # check how long it has been below threshold
             elapsed = time.time() - self.drop_start_time
+            #check if it's below moving average as well and count crossings
+            if self.above_ma and self.cross_count == 0:
+                self.cross_count += 1 
+            elif not self.above_ma and self.cross_count == 1:
+                self.cross_count += 1
+            # set new threshold and mark a new constriction start if the signal hasn't gone above fixed threshold 
+            # but has crossed ma threshold again
+            if self.cross_count == 2:
+                self.exit_thresh = None
+                self.drop_start_time = None
+                self.short_trigger_handled = False
+                self.long_trigger_handled = False
+                self.extra_trigger_handled = False
+                self.baseline_buffer.append(filt_area)
+                return 0
+
             if elapsed >= self.extra_dur:
                 # if below threshold for longer than extra_dur --> extra feature unlocked
                 if not self.extra_trigger_handled:
@@ -178,13 +217,15 @@ class ConstrictionMonitor:
                     print("Short constriction detected.")
                     self.short_trigger_handled = True
                     return 1
+            self.baseline_buffer.append(filt_area) # add value to keep calculating moving average
         else:
             # reset timer
+            self.exit_thresh = None
             self.drop_start_time = None
             self.short_trigger_handled = False
             self.long_trigger_handled = False
             self.extra_trigger_handled = False
-            self.baseline_buffer.append(last_val)
+            self.baseline_buffer.append(filt_area)
         return 0 # no new event.
 
 # ---------------------------------------------------------

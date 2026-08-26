@@ -13,12 +13,12 @@ class StartupWidget(QtWidgets.QWidget):
         self.selected_device = None # Tracks the user's choice
 
         # --- TITLE ---
-        title = QtWidgets.QLabel("BENVENUTO")
+        title = QtWidgets.QLabel("PUPIL-COM")
         title.setStyleSheet("font-size: 24px; font-weight: bold; margin-bottom: 20px;")
         self.layout.addWidget(title)
 
         # --- DEVICE SELECTION ---
-        dev_label = QtWidgets.QLabel("Quale dispositivo stai utilizzando?")
+        dev_label = QtWidgets.QLabel("Quale dispositivo si sta utilizzando?")
         dev_label.setStyleSheet("font-size: 18px; color: white;")
         self.layout.addWidget(dev_label, alignment=QtCore.Qt.AlignCenter)
 
@@ -30,7 +30,7 @@ class StartupWidget(QtWidgets.QWidget):
         self.btn_occhiale.setCheckable(True)
         self.btn_occhiale.setFixedSize(200, 60)
         
-        self.btn_gp3 = QtWidgets.QPushButton("GP3 (Gazepoint)")
+        self.btn_gp3 = QtWidgets.QPushButton("Remoto (Gazepoint GP3)")
         self.btn_gp3.setCheckable(True)
         self.btn_gp3.setFixedSize(200, 60)
         
@@ -69,7 +69,7 @@ class StartupWidget(QtWidgets.QWidget):
         self.layout.addSpacing(20)
 
         # --- NAME INPUT ---
-        instr_1 = QtWidgets.QLabel("Inserisci il nome del soggetto:")
+        instr_1 = QtWidgets.QLabel("Nome del soggetto:")
         self.layout.addWidget(instr_1, alignment=QtCore.Qt.AlignCenter)
 
         self.name_input = QtWidgets.QLineEdit()
@@ -88,7 +88,7 @@ class StartupWidget(QtWidgets.QWidget):
         self.confirm_button.clicked.connect(self.on_confirm)
         self.layout.addWidget(self.confirm_button, alignment=QtCore.Qt.AlignCenter)
 
-        self.skip_button = QtWidgets.QPushButton("Salta")
+        self.skip_button = QtWidgets.QPushButton("Salta (Sessione anonima)")
         self.skip_button.setFixedWidth(400)
         self.skip_button.setStyleSheet("background-color: #444; color: #888; margin-top: 10px")
         # Route skip through a validation function first

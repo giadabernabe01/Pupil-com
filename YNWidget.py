@@ -7,7 +7,7 @@ import subprocess
 import os
 import matplotlib.pyplot as plt
 from PyQt5 import QtCore, QtWidgets, QtGui
-from PyQt5.QtWidgets import QSizePolicy, QApplication
+from PyQt5.QtWidgets import QSizePolicy, QApplication, QMessageBox
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore import QUrl
 from DataProcessing import AreaFilter, ConstrictionMonitor
@@ -26,7 +26,8 @@ class YNWidget(QtWidgets.QWidget):
 
         #Sound setup
         self.player = QMediaPlayer()
-        self.sound_directory = r"C:\Users\jadel\TESI\GUI_pl\Sounds"
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        self.sound_directory = os.path.join(base_path, "Sounds")
         self.sound_yes = os.path.join(self.sound_directory, "answer_yes.mp3")
         self.sound_no = os.path.join(self.sound_directory, "answer_no.mp3")
 
@@ -35,7 +36,7 @@ class YNWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.label)
         self.setWindowTitle("Sì o No?")
 
-        self.area_label = QtWidgets.QLabel("Area Filtrata: 0.0")
+        self.area_label = QtWidgets.QLabel("Area: 0.0")
         self.layout.addWidget(self.area_label)
 
         self.ans_label = QtWidgets.QLabel("Acquisizione baseline\nGuarda lontano...")
@@ -61,6 +62,8 @@ class YNWidget(QtWidgets.QWidget):
         self.state = "INITIALIZATION" # options: INITIALIZATION, SCANNING, COOLDOWN
         self.state_start_time = time.time()
         self.pending_selection = False
+        self.qa_counter = 0
+        self.advance_trial = False
 
         # SCANNING VARIABLES
         self.current_option = "YES" # options: YES, NO
@@ -68,11 +71,11 @@ class YNWidget(QtWidgets.QWidget):
         self.scan_start_time = 0
 
         # VISUAL STYLES
-        self.active_style = "background-color: #0078d7; color: white; font-size: 20px;"
-        self.inactive_style = "background-color: #333333; color: gray; font-size: 20px;"
+        self.active_style = "background-color: #0078d7; color: white;"
+        self.inactive_style = "background-color: #333333; color: gray;"
         self.detected_style = "background-color: #1a1a1a; color: #555; border: 1px solid #333;" # Dark/Greyed out
-        self.yes_button.setStyleSheet(self.inactive_style)
-        self.no_button.setStyleSheet(self.inactive_style)
+        self.yes_button.setStyleSheet(self.active_style)
+        self.no_button.setStyleSheet(self.active_style)
 
         # Tools placeholders
         self.logger = None
@@ -80,6 +83,10 @@ class YNWidget(QtWidgets.QWidget):
         self.saver = None
 
         self.setLayout(self.layout)
+
+    def mousePressEvent(self, event):
+        """Metodo nativo di PyQt: scatta solo quando l'utente clicca il widget"""
+        self.advance_trial = True
 
     def resizeEvent(self, event):
         """Dynamically scales all text to fit the screen size"""
@@ -188,14 +195,36 @@ class YNWidget(QtWidgets.QWidget):
         self.no_button.setStyleSheet(self.inactive_style)
         self.monitor.reset_monitor()
 
+    def show_timeout_dialog(self):
+        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        
+        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Errore di Rilevamento")
+        msg.setText("Il sistema non riesce a rilevare correttamente la pupilla.\nControlla l'inquadratura e clicca riprova.")
+        
+        btn_retry = msg.addButton("Riprova", QMessageBox.AcceptRole)
+        msg.setStyleSheet("QLabel { color: white; font-size: 16px; } QPushButton { font-size: 16px; padding: 5px; }")
+        
+        # Execute popup
+        msg.exec_()
+        
+        self.filter.reset()
+        self.monitor.reset_monitor()
+        self.state_start_time = time.time()
+
     def update_data(self, raw_area):
         frame_answer_code = 0
         area = self.filter.area_filtering(raw_area)
+        # Signal loss timeout check
+        if self.filter.timeout_triggered:
+            self.show_timeout_dialog()
+            return
         val = area if area is not None else 0.0
         self.area_label.setText(f"Area registrata: {val:.2f}")
-        # Calculate threshold
-        current_thresh = np.mean(self.monitor.baseline_buffer) * self.monitor.thresh if self.monitor.baseline_buffer else 0
-
+        current_thresh = self.monitor.current_sma_thresh
+        exit_thresh = self.monitor.exit_thresh
         # Monitor logic
         status = self.monitor.constriction_detector(raw_area)
 
@@ -207,11 +236,15 @@ class YNWidget(QtWidgets.QWidget):
 
             self.monitor.baseline_collection(raw_area)
 
-            if time.time() - self.state_start_time > self.t_init:
-                if self.logger: self.logger.log("Initialization completed. New question.")
+            #if time.time() - self.state_start_time > self.t_init:
+            if self.advance_trial:
+                self.advance_trial = False
+                self.qa_counter+=1
+                if self.logger: self.logger.log(f"Question {self.qa_counter} asked. Moving to answer {self.qa_counter}.")
                 self.state = "SCANNING"
                 self.current_option = "YES"
                 self.scan_start_time = time.time()
+                self.state_start_time = time.time()
                 self.ans_label.setText("Guarda vicino quando la tua risposta è illuminata.")
         
         elif self.state == "SCANNING":
@@ -231,7 +264,8 @@ class YNWidget(QtWidgets.QWidget):
                 return
             
             elif not is_constricted and self.pending_selection:
-                if self.logger: self.logger.log(f"Short constriction confirmed. Answer: {self.current_option}")
+                elapsed = time.time() - self.state_start_time
+                if self.logger: self.logger.log(f"Short constriction confirmed. Answer: {self.current_option} to question {self.qa_counter}. Provided in: {elapsed} s")
                 self.ans_label.setText(f"Hai risposto: {self.current_option}")
                 self.ans_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
 
@@ -306,19 +340,21 @@ class YNWidget(QtWidgets.QWidget):
             # Wait 5 seconds before restarting the loop
             remaining = self.t_cool - (time.time() - self.state_start_time)
             self.ans_label.setText(f"Rispondi a un'altra domanda tra {remaining: .1f}...")
+            #self.ans_label.setText("Ascolta la prossima domanda")
 
             if remaining <=0:
+                self.advance_trial= False
                 # reset for new acquisition
-                if self.logger : self.logger.log("Cooldown completed. Re-initialising...")
+                #if self.logger : self.logger.log(f"Question {self.qa_counter} sked. Moving to answer {self.qa_counter}")
                 self.reset_to_initialization()
 
         # Save data to CSV
         if self.saver:
-            self.saver.add_data(raw_area, val, current_thresh, status, frame_answer_code)
+            self.saver.add_data(raw_area, val, current_thresh, exit_thresh, status, frame_answer_code)
         
         # Plot data
         if self.plotter:
-            self.plotter.add_data(val)
+            self.plotter.add_data(val, current_thresh, exit_thresh)
 
 
     def reset_to_initialization(self):
@@ -331,8 +367,8 @@ class YNWidget(QtWidgets.QWidget):
         self.yes_button.setText("SI")
         self.no_button.setText("NO")
         self.ans_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
-        self.yes_button.setStyleSheet(self.inactive_style)
-        self.no_button.setStyleSheet(self.inactive_style)
+        self.yes_button.setStyleSheet(self.active_style)
+        self.no_button.setStyleSheet(self.active_style)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

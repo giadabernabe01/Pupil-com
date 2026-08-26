@@ -177,8 +177,8 @@ class CalibrationWidget(QtWidgets.QWidget):
         filtered = self.filter.area_filtering(raw_area)
         val = filtered if filtered else 0.0
         self.live_val.setText(f"Area registrata: {val:.0f}")
-        if self.saver: self.saver.add_data(raw_area, val, 0, 0, 0)
-        if self.plotter: self.plotter.add_data(val, threshold=0)
+        if self.saver: self.saver.add_data(raw_area, val, 0, 0, 0, 0)
+        if self.plotter: self.plotter.add_data(val, threshold=0, exit_threshold=0)
 
         if self.state == "IDLE" or self.state == "DONE":
             return

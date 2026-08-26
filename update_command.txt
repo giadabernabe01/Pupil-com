@@ -1,0 +1,3 @@
+cd C:\Users\Admin\Desktop\PupilCommunicator\Pupil-com_GUI
+
+pyinstaller --onefile --exclude-module PySide6 --exclude-module shiboken6 --collect-data autocorrect --collect-data wordfreq --collect-data mediapipe --add-data "credentials.json;." --add-data "token.json;." --add-data "token.pickle;." --add-data "Images;Images" --add-data "Sounds;Sounds" main.py

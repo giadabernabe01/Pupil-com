@@ -5,7 +5,7 @@ import datetime
 import time
 import random
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QApplication, QPushButton, QLabel
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QApplication, QPushButton, QLabel, QMessageBox
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QTimer
 from DataProcessing import AreaFilter, ConstrictionMonitor
@@ -69,7 +69,7 @@ class GameWidget(QWidget):
         threshold = self.params["constriction"].get("threshold", 0.75)
 
         self.filter = AreaFilter(fps=active_fps, device_type=self.device_type)
-        self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type)
+        self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type, short_dur=self.short, long_dur=self.long)
         print(f"{active_fps}")
 
         self.reset_to_initialization()
@@ -101,7 +101,7 @@ class GameWidget(QWidget):
     def reset_game_state(self):
         self.game_trigger = 0       # Sticky flag to pass triggers from PyQt to Pygame
         self.frame_event_code = 0   # Safe event code initialization
-        self.start_time = 2 
+        self.start_time = 3 
         self.collision_flag = False
         self.timestamp = np.array([0])
         self.planet_list = ["nettuno.png", "urano.png", "saturno.png", "giove.png", "marte.png", "terra.png", "venere.png", "mercurio.png", "sole.png"]
@@ -121,7 +121,6 @@ class GameWidget(QWidget):
 
         self.lives = getattr(self, 'default_lives', 5)
 
-        
         self.psu_multiplier = 1 
         self.score = 0
         self.level = 0
@@ -146,17 +145,39 @@ class GameWidget(QWidget):
         """Slot to receive data from the receiver"""
         self.current_area = area
 
+    def show_timeout_dialog(self):
+        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        
+        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Errore di Rilevamento")
+        msg.setText("Il sistema non riesce a rilevare correttamente la pupilla.\nControlla l'inquadratura e clicca riprova.")
+        
+        btn_retry = msg.addButton("Riprova", QMessageBox.AcceptRole)
+        msg.setStyleSheet("QLabel { color: white; font-size: 16px; } QPushButton { font-size: 16px; padding: 5px; }")
+        
+        # Execute popup
+        msg.exec_()
+        
+        self.filter.reset()
+        self.monitor.reset_monitor()
+        self.state_start_time = time.time()
+
     def update_data(self, raw_area):
         self.current_area = raw_area # Always update local variable
 
         # 1. ALWAYS perform the math synced perfectly with the poll_timer!
         self.filtered_val = self.filter.area_filtering(raw_area)
+
+        if self.filter.timeout_triggered:
+            self.show_timeout_dialog()
+            return
         
-        current_thresh = 0.0
-        if len(self.monitor.baseline_buffer) > 0:
-            current_thresh = np.mean(self.monitor.baseline_buffer) * self.monitor.thresh
+        current_thresh = self.monitor.current_sma_thresh
+        exit_thresh = self.monitor.exit_thresh
             
-        status = self.monitor.constriction_detector(raw_area)
+        status = self.monitor.constriction_detector(self.filtered_val)
         
         # Make the trigger "sticky" so Pygame doesn't miss it between frames
         if status != 0:
@@ -164,11 +185,11 @@ class GameWidget(QWidget):
 
         # 2. ALWAYS save and plot, keeping the time-series perfectly accurate
         if self.plotter: 
-            self.plotter.add_data(self.filtered_val, current_thresh)
+            self.plotter.add_data(self.filtered_val, current_thresh, exit_thresh)
             
         if self.saver: 
             event = getattr(self, 'frame_event_code', 0) if getattr(self, 'game_active', False) else "MENU"
-            self.saver.add_data(raw_area, self.filtered_val, current_thresh, status, event)
+            self.saver.add_data(raw_area, self.filtered_val, current_thresh, exit_thresh, status, event)
             # Consume the event code so it doesn't print to CSV multiple times
             if getattr(self, 'game_active', False) and event != 0:
                 self.frame_event_code = 0 
@@ -180,7 +201,7 @@ class GameWidget(QWidget):
             
         # --- PRE-GAME MENU STATE MACHINE ---
         if self.state == "INITIALIZATION":
-            self.monitor.baseline_collection(raw_area)
+            self.monitor.baseline_collection(self.filtered_val)
 
             elapsed = time.time() - self.state_start_time
             remaining = self.t_init - elapsed
@@ -231,8 +252,8 @@ class GameWidget(QWidget):
                 self.reset_to_initialization()
 
         elif self.state == "WAIT_EXIT":
-            if status == 1 or status == 2:
-                if self.logger: self.logger.log("Exit Confirmation")
+            if time.time() - self.state_start_time >= 5:
+                if self.logger: self.logger.log("Back to game lobby")
                 self.trigger_cooldown()
 
     def clear_ui(self):
@@ -256,7 +277,7 @@ class GameWidget(QWidget):
 
         self.monitor.reset_monitor()
         if hasattr(self.monitor, 'baseline_buffer'):
-            self.monitor.baseline_buffer = []
+            self.monitor.baseline_buffer.clear()
 
         self.game_active = False # safety reset
 
@@ -387,7 +408,7 @@ class GameWidget(QWidget):
         # Load Images
         try:
             # Draw background
-            starrysky = pygame.image.load(os.path.join(image_dir,'starrysky.jpg'))
+            starrysky = pygame.image.load(os.path.join(image_dir,'starrysky_red.jpg'))
             window.blit(starrysky, (0,0))
 
             # Load shuttle image
@@ -456,8 +477,9 @@ class GameWidget(QWidget):
         
         t_start = datetime.datetime.now()
         frame_counter = 0
+        self.game_trigger = 0 
+        self.monitor.reset_monitor()
 
-        # Game loop
         # Game loop
         while self.lives > 0 and self.openflag and self.game_active:
             self.clock.tick(60)
@@ -482,7 +504,6 @@ class GameWidget(QWidget):
             # Raising difficulty when level up
             self.level = int(self.score / 5)
             
-            # Speeds up by 15% every level. No more erratic jumps!
             speed_multiplier = 1.0 + (self.level * 0.15)
             self.planet_speed = self.base_planet_speed * speed_multiplier
             self.asteroid_speed = (self.base_planet_speed * 1.2) * speed_multiplier
@@ -567,7 +588,7 @@ class GameWidget(QWidget):
                         break
 
             # Need the threshold for the UI overlay feedback
-            current_thresh = np.mean(self.monitor.baseline_buffer) * self.monitor.thresh if self.monitor.baseline_buffer else 0
+            current_thresh = self.monitor.current_sma_thresh if self.monitor.baseline_buffer else 0
 
             # -------------------------------------------------------------
             # PAUSE MENU LOGIC (TRIGGERED BY LONG CONSTRICTION)
@@ -887,18 +908,19 @@ class GameWidget(QWidget):
     def end_game(self):
         print("Game Ending")
 
+        # Clear the previous UI using self.main_layout
+        self.clear_ui()
+
         # Save arrays (Legacy)
         # self.save_array(list(self.filter.pupil_areas_raw), "PupilAreas_raw.txt")
 
-        # 2. Save plot
+        # Save plot
         if self.plotter:
             self.plotter.save_plot()
             self.plotter = DataPlotter(self.foldername, f"Space Shuttle_{int(time.time())}")
 
-        # 3. Clear the previous UI using self.main_layout
-        self.clear_ui()
-
         # 4. Build the "Game Over" UI
+        self.state_start_time = time.time()
         welcome_message = QLabel("CONGRATULAZIONI!", self)
         welcome_message.setFont(QFont("Calibri", 30, weight=QFont.Bold))
         welcome_message.setAlignment(Qt.AlignCenter)
@@ -939,15 +961,15 @@ class GameWidget(QWidget):
         explanation_message.setAlignment(Qt.AlignCenter)        
         explanation_message.setStyleSheet("color: white;")
 
-        shutdown_button = QPushButton("Guarda vicino per uscire", self)
-        shutdown_button.setStyleSheet("background-color: #f48a94; color: black; border: none; padding: 30px; font-size: 30px; border-radius: 15px;")
-        shutdown_button.clicked.connect(self.trigger_cooldown)
+        #shutdown_button = QPushButton("Guarda vicino per uscire", self)
+        #shutdown_button.setStyleSheet("background-color: #f48a94; color: black; border: none; padding: 30px; font-size: 30px; border-radius: 15px;")
+        #shutdown_button.clicked.connect(self.trigger_cooldown)
 
         self.main_layout.addWidget(welcome_message)
         self.main_layout.addSpacing(25)
         self.main_layout.addWidget(explanation_message)
-        self.main_layout.addSpacing(25)
-        self.main_layout.addWidget(shutdown_button)
+        #self.main_layout.addSpacing(25)
+        #self.main_layout.addWidget(shutdown_button)
         
         # 5. THE EXIT LOOP
         self.monitor.reset_monitor()

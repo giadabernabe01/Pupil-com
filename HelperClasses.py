@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from DriveUploader import DriveUploaderThread
 
 ACTIVE_UPLOAD_THREADS = [] # Google Drive global variable
-
+USE_DRIVE = False
 MAIN_DRIVE_FOLDER_ID = "1VpNhj7DEMyA-NYGaMWn8563J0OqrOgbM"
 
 CURRENT_SESSION_DRIVE_FOLDER_ID = MAIN_DRIVE_FOLDER_ID
@@ -49,15 +49,22 @@ class DataPlotter:
         self.timestamps = []
         self.filtered_data = []
         self.thresholds = []
+        self.exit_thresholds = []
 
         self.short_constrictions = []
         self.long_constrictions = []
+        self.short_constriction_requests = []
+        self.long_constriction_requests = []
     
-    def add_data(self, val, threshold=0.0):
+    def add_data(self, val, threshold, exit_threshold):
         t = time.time() - self.start_time
         self.timestamps.append(t)
         self.filtered_data.append(val)
         self.thresholds.append(threshold)
+        if exit_threshold is not None: 
+            self.exit_thresholds.append(exit_threshold) 
+        else: 
+            self.exit_thresholds.append(float('nan'))
 
     def mark_constriction(self, c_type = "short"):
         t = time.time() - self.start_time
@@ -65,6 +72,13 @@ class DataPlotter:
             self.long_constrictions.append(t)
         else:
             self.short_constrictions.append(t)
+
+    def mark_constriction_requests(self, c_type):
+        t = time.time() - self.start_time
+        if c_type == 'LONG':
+            self.long_constriction_requests.append(t)
+        else:
+            self.short_constriction_requests.append(t)
 
     def save_plot(self):
         if not self.timestamps: return
@@ -74,6 +88,8 @@ class DataPlotter:
 
         if any(t>0 for t in self.thresholds):
             plt.plot(self.timestamps, self.thresholds, label='Threshold', color='black', linestyle='--')
+        if any(t>0 for t in self.thresholds):
+            plt.plot(self.timestamps, self.exit_thresholds, label='Exit threshold', color='red', linestyle='--')
         
         # Add red lines for short constriction
         for i, ct in enumerate(self.short_constrictions):
@@ -83,10 +99,18 @@ class DataPlotter:
         for i, ct in enumerate(self.long_constrictions):
             label = 'Long Constriction' if i == 0 else ""
             plt.axvline(x=ct, color='green', linestyle='-', alpha=0.7, label=label)
+
+        # Add red/green dotted lines for constriction request (testing)
+        for i, ct in enumerate(self.short_constriction_requests):
+            label = 'Short constriction request' if i == 0 else ""
+            plt.axvline(x=ct, color='red', linestyle='--', alpha=0.7, label=label)
+        for i, ct in enumerate(self.long_constriction_requests):
+            label = 'Long constriction request' if i == 0 else ""
+            plt.axvline(x=ct, color='green', linestyle='--', alpha=0.7, label=label)
             
         plt.title(f"Session: {self.session_name}")
         plt.xlabel("Time (s)")
-        plt.ylabel("Pupil Area")
+        plt.ylabel("Pupil Area (pixels^2)")
         plt.legend()
         plt.grid(True)
 
@@ -119,19 +143,24 @@ class DataSaver:
         self.data_rows = []
         self.start_time = time.time()
 
-    def add_data(self, raw, filtered, threshold, event_code, extra_value="", gaze_x=None, gaze_y=None):
+    def add_data(self, raw, filtered, threshold, exit_threshold, event_code, extra_value= None, frame_instruction_code=None, gaze_x=None, gaze_y=None):
         """Call this every frame to record a data point."""
         timestamp = time.time()
+        formatted_exit = f"{exit_threshold:.2f}" if exit_threshold is not None else ""
 
         row = [
             timestamp, 
             f"{raw:.2f}",       
             f"{filtered:.2f}", 
-            f"{threshold:.2f}", 
-            event_code, 
-            extra_value        
+            f"{threshold:.2f}",
+            formatted_exit, 
+            event_code,       
         ]
 
+        if extra_value is not None:
+            row.extend([f"{extra_value}"])
+        if frame_instruction_code is not None:
+            row.extend([f"{frame_instruction_code}"])
         if gaze_x is not None and gaze_y is not None:
             row.extend([f"{gaze_x:.4f}", f"{gaze_y:.4f}"])
         
@@ -146,9 +175,9 @@ class DataSaver:
         filename = f"{self.session_name}_Data_{timestamp_str}.csv"
         save_path = os.path.join(self.folder_path, filename)
 
-        header = ["Timestamp", "Raw_Area", "Filtered_Area", "Threshold", "Event_Code", extra_column_name]
+        header = ["Timestamp", "Raw_Area", "Filtered_Area", "Threshold", "Exit_Threshold", "Event_Code", extra_column_name]
         
-        if len(self.data_rows[0]) > 6:
+        if len(self.data_rows[0]) > 7:
             header.extend(["Gaze_X", "Gaze_Y"])
             
         try:
@@ -172,4 +201,27 @@ class DataSaver:
             print(f"Error saving CSV: {e}")
 
         
+from PyQt5.QtCore import QThread, pyqtSignal
+import pyttsx3
+import os
 
+class TTSWorkerThread(QThread):
+    audio_ready_signal = pyqtSignal(str) 
+
+    def __init__(self, text, file_path):
+        super().__init__()
+        self.text = text
+        self.file_path = file_path
+
+    def run(self):
+        # Il motore SAPI5 viene inizializzato QUI, isolato dalla GUI!
+        speaker = pyttsx3.init()
+        speaker.setProperty('voice', 'italian')
+        speaker.setProperty('rate', 150)
+        
+        # Genera il file wav
+        speaker.save_to_file(self.text, self.file_path)
+        speaker.runAndWait()
+        
+        # Manda il segnale alla GUI che il file è pronto
+        self.audio_ready_signal.emit(self.file_path)

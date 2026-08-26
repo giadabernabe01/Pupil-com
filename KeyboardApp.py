@@ -9,11 +9,12 @@ import winsound
 from autocorrect import Speller
 from wordfreq import top_n_list
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QGridLayout, QPushButton, QLineEdit, QLabel, QSizePolicy)
-from PyQt5.QtCore import Qt
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QGridLayout, QPushButton, QLineEdit, QLabel, QSizePolicy, QMessageBox)
+from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QFont
 from DataProcessing import AreaFilter, ConstrictionMonitor
-from HelperClasses import SessionLogger, DataPlotter, DataSaver
+from HelperClasses import SessionLogger, DataPlotter, DataSaver, TTSWorkerThread
 
 # in csv file add near/far instruction and written word/letter
 
@@ -25,6 +26,7 @@ class KeyboardApp(QWidget):
         # Tools initialization
         self.filter = AreaFilter(fps=130, device_type="gazepoint")
         self.monitor = ConstrictionMonitor(fps=130, thresh=0.75, device_type="gazepoint")
+        self.player = QMediaPlayer()
 
         # Suggestions hybrid logic setup
         self.spell = Speller(lang='it') # from autocorrect library
@@ -39,14 +41,14 @@ class KeyboardApp(QWidget):
 
         # Layout setup
         self.layout = QVBoxLayout()
-        self.label = QLabel("SCRIVI QUELLO CHE VUOI")
-        self.label.setFont(QFont('Arial', 12, QFont.Bold))
+        self.label = QLabel("TASTIERA")
+        self.label.setFont(QFont('Arial', 16, QFont.Bold))
         self.label.setStyleSheet('color: white;')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
         
         # Live status label (added as it was referenced in your update_data)
-        self.live_label = QLabel("INITIALIZING...")
+        self.live_label = QLabel("INIZIALIZZANDO...")
         self.live_label.setStyleSheet('color: #aaa; font-size: 14px;')
         self.live_label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.live_label)
@@ -61,8 +63,8 @@ class KeyboardApp(QWidget):
         self.layout.addWidget(self.display)
 
         # Visual styles
-        self.active_style = "background-color: #0078d7; color: white; font-size:18px; border: 2px solid white;"
-        self.inactive_style = "background-color:#2b2b2b; color: white; font-size: 16px; border: 1px solid #555;"
+        self.active_style = "background-color: #0078d7; color: white; border: 2px solid white;"
+        self.inactive_style = "background-color:#2b2b2b; color: white; border: 1px solid #555;"
         self.detected_style = "background-color: #1a1a1a; color: #555; border: 1px solid #333;" # Dark/Greyed out
 
         # Grid setup
@@ -75,7 +77,7 @@ class KeyboardApp(QWidget):
         for i in range(3):
             btn = QPushButton(self.default_suggestions[i])
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            btn.setFont(QFont('Arial', 12, QFont.Bold))
+            btn.setFont(QFont('Arial', 14 , QFont.Bold))
             btn.setStyleSheet(self.inactive_style)
             btn.clicked.connect(lambda checked, idx=i: self.process_suggestion_click(idx))
             self.grid_layout.addWidget(btn, 0, i*2, 1, 2)
@@ -96,7 +98,7 @@ class KeyboardApp(QWidget):
             for col_idx, key in enumerate(row):
                 btn = QPushButton(key)
                 btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                btn.setFont(QFont('Arial', 14, QFont.Bold))
+                btn.setFont(QFont('Arial', 18, QFont.Bold))
                 btn.setStyleSheet(self.inactive_style)
                 btn.clicked.connect(lambda checked, k=key: self.on_click(k))
                 self.grid_layout.addWidget(btn, row_idx+1, col_idx)
@@ -107,23 +109,25 @@ class KeyboardApp(QWidget):
         self.bottom_row_idx = len(self.keys) + 1
         self.space_btn = QPushButton("SPAZIO")
         self.space_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.space_btn.setFont(QFont('Arial', 14, QFont.Bold))
+        self.space_btn.setFont(QFont('Arial', 16, QFont.Bold))
         self.space_btn.setStyleSheet(self.inactive_style)
         self.space_btn.clicked.connect(lambda: self.on_click(" "))
         self.grid_layout.addWidget(self.space_btn, self.bottom_row_idx, 0, 1, 4)
 
         self.canc_button = QPushButton("CANCELLA")
         self.canc_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.canc_button.setFont(QFont('Arial', 14, QFont.Bold))
+        self.canc_button.setFont(QFont('Arial', 16, QFont.Bold))
         self.canc_button.setStyleSheet(self.inactive_style)
         self.canc_button.clicked.connect(lambda: self.on_click("CANC"))
         self.grid_layout.addWidget(self.canc_button, self.bottom_row_idx, 4, 1, 2)
 
         # Back button
         self.back_button = QPushButton("MENÙ PRINCIPALE")
-        self.back_button.setFont(QFont('Arial', 14, QFont.Bold))
+        self.back_button.setFont(QFont('Arial', 12, QFont.Bold))
         self.back_button.setStyleSheet(self.inactive_style)
-        self.back_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.back_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.back_button.setMinimumHeight(40)
+        self.back_button.setMaximumHeight(60)
         self.back_button.clicked.connect(self.go_back_signal.emit)
         self.layout.addWidget(self.back_button)
 
@@ -161,23 +165,35 @@ class KeyboardApp(QWidget):
 
     def resizeEvent(self, event):
         """Dynamically scales all text to fit the screen size"""
+        super().resizeEvent(event)
+        
         # Calculate base size relative to window height (minimum 14px)
         base_size = max(14, int(self.height() / 30)) 
 
-        # 1. Update all standard buttons
-        btn_font = QFont('Arial', base_size, QFont.Bold)
+        # 1. Update all standard buttons to be HUGE (1.8x multiplier)
+        key_font_size = int(base_size * 1.8)
+        key_font = QFont('Arial', key_font_size, QFont.Bold)
         for btn in self.findChildren(QPushButton):
-            btn.setFont(btn_font)
+            btn.setFont(key_font)
 
-        # 2. Update the Text Display (Make it 50% larger than buttons)
+        # 2. OVERRIDE Suggestion Buttons (Slightly smaller so words fit, 1.2x)
+        sugg_font_size = int(base_size * 1.2)
+        sugg_font = QFont('Arial', sugg_font_size, QFont.Bold)
+        for btn in self.suggestion_widgets:
+            btn.setFont(sugg_font)
+
+        # 3. OVERRIDE the Back Button to be smaller (0.7x)
+        small_btn_font_size = max(12, int(base_size * 0.7))
+        small_btn_font = QFont('Arial', small_btn_font_size, QFont.Bold)
+        self.back_button.setFont(small_btn_font)
+
+        # 4. Update the Text Display
         self.display.setFont(QFont('Arial', int(base_size * 1.5)))
         
-        # 3. Update all Labels
+        # 5. Update all Labels
         self.label.setFont(QFont('Arial', int(base_size * 1.2), QFont.Bold))
         self.pause_label.setFont(QFont('Arial', int(base_size * 1.5), QFont.Bold))
         self.live_label.setFont(QFont('Arial', int(base_size * 0.8)))
-
-        super().resizeEvent(event)
 
     def log_once(self, message):
         """Prevents logging identical messages at high frame rates"""
@@ -188,7 +204,37 @@ class KeyboardApp(QWidget):
     def play_sharp_beep(self):
         """Plays a high-pitch, short beep in a separate thread to prevent UI freezing"""
         # Frequency = 2000Hz (sharp), Duration = 80ms (very short)
-        threading.Thread(target=winsound.Beep, args=(2000, 80), daemon=True).start() 
+        threading.Thread(target=winsound.Beep, args=(2000, 80), daemon=True).start()
+
+    def synthetise_word(self,word):
+        """Turns the word into a synthetised temporary .mp3 file to be read out loud by tts tool"""
+        if hasattr(self, 'tts_thread') and self.tts_thread.isRunning():
+            return
+        self.player.setMedia(QMediaContent())
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        import glob
+        for old_file in glob.glob(os.path.join(base_dir, "temp_speech_*.wav")):
+            try:
+                os.remove(old_file)
+            except OSError:
+                pass 
+                
+        unique_filename = f"temp_speech_{int(time.time() * 1000)}.wav"
+        temp_audio_path = os.path.join(base_dir, unique_filename)
+        self.tts_thread = TTSWorkerThread(word, temp_audio_path)
+        self.tts_thread.audio_ready_signal.connect(self.play_sound)
+        self.tts_thread.start()
+
+    def play_sound(self,file_path):
+        """Plays the audio file for the word that's just been written"""
+        if os.path.exists(file_path):
+            url = QUrl.fromLocalFile(file_path)
+            content = QMediaContent(url)
+            self.player.setMedia(content)
+            self.player.play()
+        else:
+            print(f"File audio non trovato: {file_path}") 
 
     def start_session(self, folder_path, params, device_type):
         self.logger = SessionLogger(folder_path, "Keyboard_Widget")
@@ -212,7 +258,7 @@ class KeyboardApp(QWidget):
         threshold = self.params["constriction"].get("threshold", 0.75)
 
         self.filter = AreaFilter(fps=active_fps, device_type=self.device_type)
-        self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type)
+        self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type, short_dur=self.short, long_dur=self.long)
 
         self.reset_to_initialization()
         if self.logger: self.logger.log("Session Started")
@@ -227,6 +273,7 @@ class KeyboardApp(QWidget):
 
     def reset_to_initialization(self):
         self.monitor.baseline_buffer.clear()
+        self.display.setText("")
         self.state = "INITIALIZATION"
         self.state_start_time = time.time()
         self.pending_selection = None
@@ -262,11 +309,10 @@ class KeyboardApp(QWidget):
         for i, word in enumerate(word_list):
             btn = self.suggestion_widgets[i]
             btn.setText(word)
-            btn.setProperty("word_val", word)
 
     def process_suggestion_click(self,idx):
         btn = self.suggestion_widgets[idx]
-        word = btn.property("word_val")
+        word = btn.text()
         if word:
             print(f"DEBUG: Sggerimento cliccato: {word}")
             self.on_click_suggestion(word)
@@ -283,6 +329,7 @@ class KeyboardApp(QWidget):
             new_text = " ".join(words) + " "
 
         self.display.setText(new_text)
+        self.synthetise_word(word)
         self.update_suggestions()
         self.log_once(f"Word completed/replaced: {word}")
         self.next_state = "KEYBOARD_ROW"
@@ -363,7 +410,7 @@ class KeyboardApp(QWidget):
                     self.btn_esci.setStyleSheet(self.active_style)
 
     def set_ui_detected(self):
-        """Visual feedback: the UI freezes and the target buttons is highlighted as detected"""
+        """Visual feedback: the UI freezes and the target button is explicitly highlighted"""
         for btn in self.findChildren(QPushButton):
             if btn == self.back_button: continue
 
@@ -371,22 +418,24 @@ class KeyboardApp(QWidget):
             if self.state == "PAUSED" and btn not in (self.btn_riprendi, self.btn_esci): continue
 
             is_target = False
-            if self.state == "KEYBOARD_ROW":
+            if self.state == "KEYBOARD_ROW" and self.current_row_idx >= 0:
                 if self.current_row_idx < len(self.button_matrix):
                     is_target = (btn in self.button_matrix[self.current_row_idx])
                 else:
                     is_target = (btn in [self.space_btn, self.canc_button])
-            elif self.state == "KEYBOARD_COL":
+            elif self.state == "KEYBOARD_COL" and self.current_col_idx >= 0:
                 if self.current_row_idx < len(self.button_matrix):
                     is_target = (btn == self.button_matrix[self.current_row_idx][self.current_col_idx])
                 else:
                     is_target = (btn == (self.space_btn if self.current_col_idx == 0 else self.canc_button))
-            elif self.state == "SUGGESTIONS":
+            elif self.state == "SUGGESTIONS" and self.current_sugg_idx >= 0:
                 is_target = (btn == self.suggestion_widgets[self.current_sugg_idx])
             elif self.state == "PAUSED":
                 is_target = (btn == self.btn_riprendi if self.current_pause_opt == 0 else btn == self.btn_esci)
 
-            if not is_target:
+            if is_target:
+                btn.setStyleSheet(self.active_style)
+            else:
                 btn.setStyleSheet(self.detected_style)
 
     def reset_ui_styles(self):
@@ -405,23 +454,53 @@ class KeyboardApp(QWidget):
         self.btn_esci.setStyleSheet(self.inactive_style)
         self.monitor.reset_monitor()
 
+    def show_timeout_dialog(self):
+        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        
+        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Errore di Rilevamento")
+        msg.setText("Il sistema non riesce a rilevare correttamente la pupilla.\nControlla l'inquadratura e clicca riprova.")
+        
+        btn_retry = msg.addButton("Riprova", QMessageBox.AcceptRole)
+        msg.setStyleSheet("QLabel { color: white; font-size: 16px; } QPushButton { font-size: 16px; padding: 5px; }")
+        
+        # Execute popup
+        msg.exec_()
+        
+        self.filter.reset()
+        self.monitor.reset_monitor()
+        self.state_start_time = time.time()
+
     def update_data(self, raw_area):
         """Main update loop triggered by raw data input"""
         frame_output = 0
         area = self.filter.area_filtering(raw_area)
-        status = self.monitor.constriction_detector(raw_area)
+
+        if self.filter.timeout_triggered:
+            self.show_timeout_dialog()
+            return
+        
+        status = self.monitor.constriction_detector(area)
         is_eye_constricted = self.monitor.drop_start_time is not None
 
-        current_thresh = 0.0
-        if len(self.monitor.baseline_buffer) > 0:
-            # Calculate the threshold as a percentage of the current baseline mean
-            current_thresh = np.mean(self.monitor.baseline_buffer) * self.monitor.thresh
+        invalid_state = (
+            (self.state == "KEYBOARD_ROW" and self.current_row_idx == -1) or
+            (self.state == "KEYBOARD_COL" and self.current_col_idx == -1) or
+            (self.state == "SUGGESTIONS" and self.current_sugg_idx == -1)
+        )
+        
+        if invalid_state and is_eye_constricted:
+            # Wipe the monitor and force the scanner to start ticking
+            self.monitor.reset_monitor()
+            status = 0
+            is_eye_constricted = False
+
+        current_thresh = self.monitor.current_sma_thresh
+        exit_thresh = self.monitor.exit_thresh
 
         plot_val = area if area is not None else 0.0
-        if self.saver:
-            self.saver.add_data(raw_area, plot_val, current_thresh, status)
-        if self.plotter:
-            self.plotter.add_data(plot_val, current_thresh)
 
         if area is not None:
             self.live_label.setText(f"Acquisendo...")
@@ -431,7 +510,7 @@ class KeyboardApp(QWidget):
         # --- STATE MACHINE LOGIC ---
         if self.state == "INITIALIZATION":
             self.log_once("Initialization Started")
-            self.monitor.baseline_collection(raw_area)
+            self.monitor.baseline_collection(area)
             if time.time() - self.state_start_time >= self.t_init:
                 self.state = "KEYBOARD_ROW"
                 self.current_row_idx = -1
@@ -535,9 +614,9 @@ class KeyboardApp(QWidget):
                 self.log_once("Long constriction detected: moving to keyboard")
                 if self.plotter: self.plotter.mark_constriction("long")
                 self.pending_selection = "LONG"
-                self.next_state = "KEYBOARD_ROW"
-                self.state = "COOLDOWN"
-                self.reset_ui_styles()
+                #self.next_state = "KEYBOARD_ROW"
+                #self.state = "COOLDOWN"
+                #self.reset_ui_styles()
             elif status == 3:
                 self.trigger_pause()
             elif not is_eye_constricted and self.pending_selection == "SHORT":
@@ -607,10 +686,10 @@ class KeyboardApp(QWidget):
                 self.scan_start_time = time.time()
 
         if self.saver:
-            self.saver.add_data(raw_area, plot_val, current_thresh, status, frame_output)
+            self.saver.add_data(raw_area, plot_val, current_thresh, exit_thresh, status, frame_output)
 
         if self.plotter:
-            self.plotter.add_data(plot_val, current_thresh)
+            self.plotter.add_data(plot_val, current_thresh, exit_thresh)
 
     def on_click(self, key):
         current = self.display.text()
@@ -618,23 +697,29 @@ class KeyboardApp(QWidget):
 
         if key == "CANC":
             self.log_once("Button clicked: CANC")
-            self.display.setText(current[:-1])
+            current = current[:-1]
+            self.display.setText(current)
             self.update_suggestions()
             self.next_state = "KEYBOARD_COL"
             self.current_col_idx = 0
         elif key == "FULL_CANC":
             self.log_once("Button clicked: CANC, FULL_CANC option --> word erased")
             if current.rfind(" ") != -1:
-                self.display.setText(current[:current.rfind(" ")]) # delete the fully last word
+                current = current[:current.rfind(" ")]
+                self.display.setText(current) # delete the fully last word
             else:
                 self.display.setText("")
             self.update_suggestions()
             self.next_state = "KEYBOARD_ROW"
         else:
-            self.display.setText(current+key)
+            current = current+key
+            self.display.setText(current)
             self.log_once(f"Button clicked. Current text: {self.display.text()}")
             self.update_suggestions()
             self.next_state = "KEYBOARD_ROW"
+
+        if len(current) > 1:
+            self.synthetise_word(current)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

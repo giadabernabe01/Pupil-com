@@ -1,16 +1,44 @@
 import json
 import os
+import copy
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 class SettingsDialog(QtWidgets.QDialog):
-    # 1. ADDED current_device to arguments
     def __init__(self, parent=None, params_file="parameters.json", current_device="gazepoint"):
         super().__init__(parent)
-        self.setWindowTitle("Global Settings")
+        self.setWindowTitle("Impostazioni globali")
         self.resize(500,400)
         self.params_file = params_file
         self.current_params = self.load_params()
         self.current_device = current_device # Store the current device
+
+        # Italian translations
+        self.translations = {
+            "constriction": "Costrizione Pupillare",
+            "gui": "Interfaccia",
+            "yn_widget":"Sì o No",
+            "keyboard_widget": "Tastiera",
+            "testing_widget": "Testing",
+            "active_fps": "FPS Attivi",
+            "short_constr_dur": "Durata Costrizione Breve",
+            "long_constr_dur": "Durata Costrizione Lunga",
+            "threshold": "Soglia",
+            "initialization_dur": "Tempo Inizializzazione",
+            "scan_interval_dur": "Intervallo Scansione",
+            "cooldown_dur": "Tempo Cooldown",
+            "max_loops": "Cicli Massimi",
+            "extra_trigger_dur": "Durata Costrizione Extra-Lunga",
+            "short_task_dur": "Durata Richiesta Breve",
+            "long_task_dur": "Durata Richiesta Lunga",
+            "far_interval_dur": "Durata Richiesta Lontano",
+            "game_widget": "Gioco",
+            "shuttle_speed": "Velocità astronave",
+            "planet_speed_base": "Velocità base pianeta",
+            "lives": "Numero vite",
+            "training_widget": "Training",
+            "calibration_widget": "Calibrazione",
+            "task_dur": "Durata richiesta"
+        }
 
         main_layout = QtWidgets.QVBoxLayout()
 
@@ -25,7 +53,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.general_tab = QtWidgets.QWidget()
         self.general_layout = QtWidgets.QVBoxLayout()
         self.general_tab.setLayout(self.general_layout)
-        self.tabs.addTab(self.general_tab, "Impostazioni generali")
+        self.tabs.addTab(self.general_tab, "Generali")
 
         # 2. ADDED DEVICE SWITCHER UI to the top of General tab
         dev_group = QtWidgets.QGroupBox("Dispositivo Attivo")
@@ -48,12 +76,16 @@ class SettingsDialog(QtWidgets.QDialog):
         for section, keys in self.current_params.items():
             if section in ["constriction", "gui"]:
                 parent_layout = self.general_layout
-                group_title = section.upper()
+                if section == "constriction":
+                    group_title = "COSTRIZIONE"
+                else:
+                    group_title = "INTERFACCIA"
             else:
                 new_tab = QtWidgets.QWidget()
                 new_layout = QtWidgets.QVBoxLayout()
                 new_tab.setLayout(new_layout)
-                self.tabs.addTab(new_tab, section.replace("_", " ").title())
+                tab_title = self.translations.get(section, section.replace("_", " ").title())
+                self.tabs.addTab(new_tab, tab_title)
                 parent_layout = new_layout
                 group_title = "Parametri"
             
@@ -62,8 +94,11 @@ class SettingsDialog(QtWidgets.QDialog):
             form_layout = QtWidgets.QFormLayout()
 
             for key, value in keys.items():
+                if key in ["gp3_fps", "pupilcore_fps"]:
+                    continue
                 # clean up the label name
-                label_text = key.replace("_", " ").title()
+                fallback_text = key.replace("_", " ").title()
+                label_text = self.translations.get(key, fallback_text)
                 label = QtWidgets.QLabel(label_text)
 
                 if isinstance(value, int) and not isinstance(value, bool):
@@ -76,7 +111,10 @@ class SettingsDialog(QtWidgets.QDialog):
                     # It's a float! Create a QDoubleSpinBox
                     spin_box = QtWidgets.QDoubleSpinBox()
                     spin_box.setRange(0.0, 10000.0)
-                    spin_box.setSingleStep(0.1) # Makes clicking the arrows step by 0.1
+                    if key == "threshold":
+                        spin_box.setSingleStep(0.05) # Finer control for threshold
+                    else:
+                        spin_box.setSingleStep(0.1)  # Default for other floats like durations
                     spin_box.setValue(value)
                     
                 else:
@@ -118,13 +156,22 @@ class SettingsDialog(QtWidgets.QDialog):
             return {}
 
     def save_and_close(self):
-        """Read inputs and write back to JSON"""
-        new_data = {}
+        """Read inputs and write back to JSON safely"""
+        
+        # 1. DEEPCOPY prevents the deletion of text/boolean settings!
+        new_data = copy.deepcopy(self.current_params)
 
         for (section, key), widget in self.inputs.items():
             if section not in new_data:
                 new_data[section] = {}
-            new_data[section][key] = widget.value()
+            
+            # 2. Extract value based on the widget type
+            if isinstance(widget, QtWidgets.QCheckBox):
+                new_data[section][key] = widget.isChecked()
+            elif isinstance(widget, QtWidgets.QLineEdit):
+                new_data[section][key] = widget.text()
+            else:
+                new_data[section][key] = widget.value() # For Spinboxes
 
         try:
             with open(self.params_file, "w") as f:

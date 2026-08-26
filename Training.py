@@ -6,16 +6,19 @@ import datetime
 from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtCore import QUrl
+from PyQt5.QtWidgets import QApplication, QMessageBox
 from DataProcessing import AreaFilter, ConstrictionMonitor, GazepointReceiver
 from HelperClasses import SessionLogger, DataPlotter, DataSaver
+from DigitalEye import DigitalEyeWidget
 
-class TestingWidget(QtWidgets.QWidget):
+class TrainingWidget(QtWidgets.QWidget):
     go_back_signal = QtCore.pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, device_type="gazepoint"):
         super().__init__()
-        self.filter = AreaFilter(fps=130, device_type="gazepoint")
-        self.monitor = ConstrictionMonitor(fps=130, thresh=0.75, device_type="gazepoint")
+        self.device_type = device_type
+        self.filter = AreaFilter(fps=130, device_type=self.device_type)
+        self.monitor = ConstrictionMonitor(fps=130, thresh=0.75, device_type=self.device_type)
         
         # Sound setup
         base_path = os.path.dirname(os.path.abspath(__file__))
@@ -41,12 +44,23 @@ class TestingWidget(QtWidgets.QWidget):
         self.layout = QtWidgets.QVBoxLayout()
         self.layout.setAlignment(QtCore.Qt.AlignCenter)
 
-        title = QtWidgets.QLabel("Testing")
+        title = QtWidgets.QLabel("Training")
         title.setStyleSheet("font-size: 24px; font-weight: bold;")
         self.layout.addWidget(title)
 
+        # Digital eye twin
+        self.digital_eye = DigitalEyeWidget(device_type="gazepoint")
+        self.layout.addWidget(self.digital_eye)
+
         self.area_label = QtWidgets.QLabel("Area registrata: 0.0")
+        self.area_label.setStyleSheet("color: #888888; font-size: 14px;") # De-emphasized
         self.layout.addWidget(self.area_label)
+        self.area_label.hide()
+
+        self.fixation_dot = QtWidgets.QLabel()
+        self.fixation_dot.setFixedSize(16, 16)
+        self.fixation_dot.setStyleSheet("background-color: red; border-radius: 8px;")
+        self.layout.addWidget(self.fixation_dot, alignment=QtCore.Qt.AlignCenter)
 
         # Dynamic instruction label
         self.message = QtWidgets.QLabel("Inizializzazione in corso...\n Guarda lontano")
@@ -66,25 +80,35 @@ class TestingWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.plot_image_label)
 
         # Buttons
-        self.back_button = QtWidgets.QPushButton("Indietro")
+        self.start_button = QtWidgets.QPushButton("INIZIA")
+        self.start_button.setMinimumHeight(50)
+        self.start_button.clicked.connect(self.start_training_sequence)
+        self.layout.addWidget(self.start_button)
+
+        self.back_button = QtWidgets.QPushButton("MENÙ PRINCIPALE")
         self.back_button.setMinimumHeight(50)
         self.back_button.clicked.connect(self.go_back_signal.emit)
         self.layout.addWidget(self.back_button)
 
-        self.start_button = QtWidgets.QPushButton("Inizia il test")
-        self.start_button.setMinimumHeight(50)
-        self.start_button.clicked.connect(self.start_testing_sequence)
-        self.layout.addWidget(self.start_button)
-
         self.setLayout(self.layout)
+        
+        self.menu_buttons = [self.start_button, self.back_button]
+        self.menu_scan_index = 0
+
+        self.active_btn_style = "background-color: #0078d7; color: white; font-size: 24px; font-weight: bold; border: 3px solid white; border-radius: 10px; padding: 15px;"
+        self.inactive_btn_style = "background-color: #444; color: #ccc; font-size: 22px; font-weight: bold; border-radius: 10px; padding: 15px;"
+
+        for btn in self.menu_buttons:
+            btn.setStyleSheet(self.inactive_btn_style)
 
         # Logic Variables
         self.logger = None
         self.plotter = None
         self.trials = []
         self.current_trial_idx = 0
-        self.state = "IDLE"
+        self.state = "INITIALIZATION"
         self.state_start_time = 0.0
+        self.menu_scan_start_time = 0.0
 
         # Styles
         self.style_idle = "background-color: #2b2b2b; color: white;"
@@ -104,10 +128,10 @@ class TestingWidget(QtWidgets.QWidget):
     def start_session(self, folder_path, params, device_type):
         """Called by MainWindow when entering this screen"""
         self.folder_path = folder_path
-        self.logger = SessionLogger(folder_path, "Testing")
-        self.plotter = DataPlotter(folder_path, "Testing")
-        self.saver = DataSaver(folder_path, "Testing")
-        self.logger.log("Testing Session Started")
+        self.logger = SessionLogger(folder_path, "Training")
+        self.plotter = DataPlotter(folder_path, "Training")
+        self.saver = DataSaver(folder_path, "Training")
+        self.logger.log("Training Session Started")
         
         # Retrieve parameters
         self.params = params
@@ -115,27 +139,28 @@ class TestingWidget(QtWidgets.QWidget):
         constrict_config = self.params.get("constriction", {})
         self.short = constrict_config.get("short_constr_dur", 0.5)
         self.long = constrict_config.get("long_constr_dur", 3.0)
-        testing_config = self.params.get("testing_widget", {})
-        self.t_init = testing_config.get("initialization_dur", 5.0)
+        training_config = self.params.get("training_widget", {})
+        self.t_init = training_config.get("initialization_dur", 5.0)
 
-        self.t_short_task = testing_config.get("short_task_dur", 3.5)
-        self.t_long_task = testing_config.get("long_task_dur", 6.0)
-        self.t_far_interval = testing_config.get("far_interval_dur", 4.0)
+        self.t_short_task = training_config.get("short_task_dur", 3.5)
+        self.t_long_task = training_config.get("long_task_dur", 6.0)
+        self.t_far_interval = training_config.get("far_interval_dur", 4.0)
 
         active_fps = self.params.get("active_fps", 60) 
         threshold = self.params["constriction"].get("threshold", 0.75)
 
         self.filter = AreaFilter(fps=active_fps, device_type=self.device_type)
-        self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type)
+        self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type, short_dur=self.short, long_dur=self.long)
 
         # Reset state but wait for user to click start button
         self.reset_logic()
-        self.state = "IDLE"
+        self.state = "INITIALIZATION"
+        self.state_start_time = time.time()
         self.message.setText("Premi 'Inizia' per cominciare")
     
     def end_session(self):
         "Called by MainWindow when leaving"
-        if self.logger: self.logger.log("Testing Session Ended")
+        if self.logger: self.logger.log("Training Session Ended")
         if self.plotter: 
             self.plotter.save_plot()
             png_files = [os.path.join(self.folder_path, f) for f in os.listdir(self.folder_path) if f.endswith('.png')]
@@ -152,19 +177,19 @@ class TestingWidget(QtWidgets.QWidget):
                 # Force the GUI to update immediately
                 QtWidgets.QApplication.processEvents()
 
-        if self.saver: self.saver.save_file()
+        if self.saver: self.saver.save_file("Constr_req")
 
         timestamp = datetime.datetime.now().strftime("%H%M%S")
 
         if self.raw_data_history and self.folder_path:
             try:
-                raw_name = f"Testing_Raw_{timestamp}.txt"
+                raw_name = f"Training_Raw_{timestamp}.txt"
                 np.savetxt(os.path.join(self.folder_path, raw_name), self.raw_data_history)
 
-                filt_name = f"Testing_filt_{timestamp}.txt"
+                filt_name = f"Training_filt_{timestamp}.txt"
                 np.savetxt(os.path.join(self.folder_path, filt_name), self.filtered_data_history)
 
-                time_name = f"Testing_Filtered_{timestamp}.txt"
+                time_name = f"Training_Filtered_{timestamp}.txt"
                 np.savetxt(os.path.join(self.folder_path, time_name), self.timestamps_history)
 
                 if self.logger: self.logger.log(f"Data saved: {raw_name}")
@@ -177,6 +202,7 @@ class TestingWidget(QtWidgets.QWidget):
         self.reset_logic()
 
     def reset_logic(self):
+        self.menu_scan_index = 0
         self.current_trial_idx = 0
         self.trials = [1,1,1,2,2]
         np.random.shuffle(self.trials)
@@ -196,17 +222,19 @@ class TestingWidget(QtWidgets.QWidget):
         self.gaze_tolerance = 0.15 # Default fallback
         if hasattr(self, 'gaze_warning_label'):
             self.gaze_warning_label.setText("")
+        self.is_gaze_deviated = False
+        self.gaze_dev_start_time = 0.0
 
-    def start_testing_sequence(self):
+    def start_training_sequence(self):
         """Triggered by the start button"""
         if self.logger is None and self.folder_path:
-            self.logger = SessionLogger(self.folder_path, "Testing")
-            self.logger.log("Testing Session Restarted")
+            self.logger = SessionLogger(self.folder_path, "training")
+            self.logger.log("training Session Restarted")
 
         if self.plotter is None and self.folder_path:
-            self.plotter = DataPlotter(self.folder_path, "Testing")
+            self.plotter = DataPlotter(self.folder_path, "training")
 
-        self.saver = DataSaver(self.folder_path, "Testing")
+        self.saver = DataSaver(self.folder_path, "training")
 
         self.start_button.setEnabled(False)
         self.start_button.hide()
@@ -223,34 +251,75 @@ class TestingWidget(QtWidgets.QWidget):
         player.setVolume(100) # Unmute now
         player.play()
 
+    def show_timeout_dialog(self):
+        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        
+        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Errore di Rilevamento")
+        msg.setText("Il sistema non riesce a rilevare correttamente la pupilla.\nControlla l'inquadratura e clicca riprova.")
+        
+        btn_retry = msg.addButton("Riprova", QMessageBox.AcceptRole)
+        msg.setStyleSheet("QLabel { color: white; font-size: 16px; } QPushButton { font-size: 16px; padding: 5px; }")
+        
+        # Execute popup
+        msg.exec_()
+        
+        self.filter.reset()
+        self.monitor.reset_monitor()
+        self.state_start_time = time.time()
+
     def update_data(self, raw_area, raw_x=0, raw_y=0):
         """Main Loop called by Main Window"""
         frame_instruction_code = 0
         area = self.filter.area_filtering(raw_area)
+
+        if self.filter.timeout_triggered:
+            self.show_timeout_dialog()
+            return
+        
         val = area if area is not None else 0.0
         self.area_label.setText(f"Area registrata: {val:.2f}")
+        self.digital_eye.update_eye(raw_x, raw_y, val)
 
-        # Calculate threshold
-        current_thresh = 0.0
-        if len(self.monitor.baseline_buffer) > 0:
-            current_thresh = np.mean(self.monitor.baseline_buffer)* self.monitor.thresh
-
-        status = self.monitor.constriction_detector(raw_area)
+        status = self.monitor.constriction_detector(area)
     
+        current_thresh = self.monitor.current_sma_thresh
+        exit_thresh = self.monitor.exit_thresh #if self.monitor.exit_thresh is not None else 0.0
+
         # Updating plotter
-        if self.plotter: self.plotter.add_data(val, current_thresh)
+        if self.plotter: self.plotter.add_data(val, current_thresh, exit_thresh)
 
         elapsed = time.time() - self.state_start_time
 
         # --- STATE MACHINE ---
-        if self.state == "IDLE":
-            self.monitor.baseline_collection(raw_area)
+        if self.state == "INITIALIZATION":
+            self.monitor.baseline_collection(area)
+            elapsed_scan = time.time() - self.menu_scan_start_time
+            if elapsed_scan >= 3:
+                self.menu_scan_start_time = time.time()
+                self.menu_scan_index = 1 - self.menu_scan_index # Toggles between 0 and 1
+                
+                # Update button colors based on which one is active
+                for i, btn in enumerate(self.menu_buttons):
+                    if i == self.menu_scan_index:
+                        btn.setStyleSheet(self.active_btn_style)
+                    else:
+                        btn.setStyleSheet(self.inactive_btn_style)
+
             if status == 1:
-                if self.logger: self.logger.log("Start triggered by Eye")
-                self.start_testing_sequence()
+                if self.menu_scan_index == 0:
+                    if self.logger: self.logger.log("Start triggered")
+                    self.start_training_sequence()
+                elif self.menu_scan_index == 1:
+                    print("Exit triggered via visual scan")
+                    self.end_session()
+                    self.go_back_signal.emit()
+                return
 
         elif self.state == "BASELINE":
-            self.monitor.baseline_collection(raw_area)
+            self.monitor.baseline_collection(area)
             if raw_x != 0 and raw_y != 0:
                 self.baseline_x.append(raw_x)
                 self.baseline_y.append(raw_y)
@@ -273,8 +342,9 @@ class TestingWidget(QtWidgets.QWidget):
         elif self.state == "INSTRUCTION_NEAR":
             current_type = self.trials[self.current_trial_idx]
             type_str = "SHORT" if current_type == 1 else "LONG"
+            if self.plotter: self.plotter.mark_constriction_requests(type_str)
 
-            self.message.setText(f"Task {self.current_trial_idx+1}/5: {type_str}\nGUARDA VICINO!")
+            self.message.setText(f"RICHIESTA {self.current_trial_idx+1}/5: GUARDA VICINO!")
             if self.logger: self.logger.log(f"Trial {self.current_trial_idx+1}: {type_str} - Audio NEAR")
 
             self.play_audio_cue(self.player_near)
@@ -286,7 +356,7 @@ class TestingWidget(QtWidgets.QWidget):
         elif self.state == "HOLDING":
             current_type = self.trials[self.current_trial_idx]
             duration = self.t_short_task if current_type == 1 else self.t_long_task
-            frame_instruction_code = "NEAR_SHORT" if current_type == 1 else "NEAR_LONG"
+            frame_instruction_code = 1 if current_type == 1 else 2
 
             if status == 1:
                 if self.plotter: self.plotter.mark_constriction("short")
@@ -307,7 +377,7 @@ class TestingWidget(QtWidgets.QWidget):
         elif self.state == "INSTRUCTION_FAR":
             self.message.setText("Guarda Lontano")
             if self.logger: self.logger.log("Audio FAR")
-            frame_instruction_code = "FAR"
+            frame_instruction_code = 0
 
             self.play_audio_cue(self.player_far)
 
@@ -317,7 +387,7 @@ class TestingWidget(QtWidgets.QWidget):
         elif self.state == "COOLDOWN":
             remaining = self.t_far_interval - elapsed
             self.message.setText(f"Attendi. {remaining: .2f}s...")
-            frame_instruction_code = "FAR" # <-- Added so it logs "FAR" for the whole interval
+            frame_instruction_code = 0 
 
             if remaining <= 0:
                 self.current_trial_idx += 1
@@ -326,26 +396,39 @@ class TestingWidget(QtWidgets.QWidget):
                 else:
                     self.next_trial()
 
-        if self.state not in ["IDLE", "BASELINE", "FINISHED", "COMPLETED_IDLE"]:
+        if self.state not in ["INITIALIZATION", "BASELINE", "FINISHED", "COMPLETED_IDLE"]:
             if raw_x != 0 and raw_y != 0:
                 current_dist = np.sqrt((raw_x - self.center_x)**2 + (raw_y - self.center_y)**2)
                 
                 if current_dist > self.gaze_tolerance:
-                    self.gaze_warning_label.setText("⚠ SGUARDO FUORI CENTRO ⚠")
-                    #if self.logger: self.logger.log("Warning: Gaze deviated from center")
+                    self.gaze_warning_label.setText("") #("⚠ SGUARDO FUORI CENTRO ⚠")
+                    if not self.is_gaze_deviated:
+                        self.is_gaze_deviated = True
+                        self.gaze_dev_start_time = 0.0
+                        if self.logger: self.logger.log("Warning: Gaze deviated from center")
                 else:
                     self.gaze_warning_label.setText("")
+                    if self.is_gaze_deviated:
+                        self.is_gaze_deviated = False
+                        dev_duration = time.time() - self.gaze_dev_start_time
+                        if self.logger: self.logger.log(f"Gaze returned to center after {dev_duration}s.")
             else:
                 self.gaze_warning_label.setText("⚠ OCCHIO NON RILEVATO ⚠")
+
+                if not self.is_gaze_deviated:
+                    self.is_gaze_deviated = True
+                    self.gaze_dev_start_time = time.time()
+                    if self.logger: self.logger.log("Warning: Eye tracking lost")
         
         if self.saver and self.state not in ["FINISHED", "COMPLETED_IDLE"]:
             self.saver.add_data(
                 raw_area, 
                 val, 
-                current_thresh, 
+                current_thresh,
+                exit_thresh, 
                 status, 
-                frame_instruction_code,
                 #extra_value="", # Leave blank if unused
+                frame_instruction_code=frame_instruction_code,
                 gaze_x=raw_x,   # Pass X coordinate
                 gaze_y=raw_y    # Pass Y coordinate 
             )
@@ -355,13 +438,29 @@ class TestingWidget(QtWidgets.QWidget):
             score_msg = f"Test Completato.\n Costrizioni rilevate correttamente: {self.correct_constrictions}/5"
             self.message.setText(score_msg)
             if self.logger: 
-                self.logger.log("Testing Trials completed")
+                self.logger.log("training Trials completed")
                 self.logger.log(f"Final Score: {self.correct_constrictions}/5")
 
             self.state = "COMPLETED_IDLE"
+            self.state_start_time = time.time()
             self.end_session()
+
+        if self.state == "COMPLETED_IDLE":
+            for btn in self.menu_buttons:
+                btn.setStyleSheet(self.inactive_btn_style)
+            elapsed = time.time() - self.state_start_time
+            if elapsed >= 5:
+                self.state = "INITIALIZATION"
+                self.state_start_time = time.time()
+                self.menu_scan_start_time = time.time()
 
     def next_trial(self):
         """Prepares state for the next trial"""
         self.state = "INSTRUCTION_NEAR"
         self.state_start_time = time.time()
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    ex = TrainingWidget()
+    ex.show()
+    sys.exit(app.exec_())
