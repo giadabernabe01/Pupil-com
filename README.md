@@ -45,22 +45,7 @@ The GUI (in Italian language) is built to allow autonomous use and it can be ful
 
 For detailed step-by-step instructions on initialisation, eye-tracker configuration, parameter tuning, and full application usage, please refer to the dedicated guide:
 
---> Read the Full User Guide (USER_GUIDE.md)
-
-## Repository structure
-```text
-  Pupil-com/
-  ├── docs/               # Documentation assets and user guide
-  ├── src/                # Source code (GUI, DSP algorithms, IPC handlers)
-  │   ├── gui/            # PyQt interface windows and layouts
-  │   ├── core/           # Signal processing and eye-tracker API handlers
-  │   └── utils/          # Helper scripts and configuration loaders
-  ├── USER_GUIDE.md       # Comprehensive step-by-step user manual
-  ├── requirements.txt    # Python library dependencies
-  ├── main.py             # Application entry point
-  ├── LICENSE             # Project license
-  └── README.md           # Repository overview
-```
+--> Read the Full User Guide [here](USER_GUIDE.md)
 
 ## Citation and Acknowledgements
 This project was developed in collaboration with the Department of Neuroscience "Rita Levi Montalcini" (University of Turin) and Politecnico di Torino.
