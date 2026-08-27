@@ -16,6 +16,7 @@ class DigitalEyeWidget(QtWidgets.QWidget):
 
         self.tracking_active = False
 
+        # set smoothing factor to avoid excessive trembling image
         self.smoothing_factor = 0.15 # the higher it is, the less smoothing (normalised, max=1)
 
         if device_type == "gazepoint":
