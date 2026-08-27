@@ -92,17 +92,15 @@ class YNWidget(QtWidgets.QWidget):
         """Dynamically scales all text to fit the screen size"""
         base_size = max(16, int(self.height() / 25))
         
-        # 1. Big SI / NO buttons
+        # Big SI / NO buttons
         main_btn_font = QtGui.QFont('Arial', int(base_size * 2), QtGui.QFont.Bold)
         self.yes_button.setFont(main_btn_font)
         self.no_button.setFont(main_btn_font)
         
-        # 2. Smaller Back button
+        # Smaller Back button
         self.back_button.setFont(QtGui.QFont('Arial', base_size, QtGui.QFont.Bold))
         
-        # 3. Labels
-        # Note: Depending on your exact imports, you may need QtGui.QFont or just QFont
-        # and checking if self.label vs self.title_label is used. Assuming self.label:
+        # Labels
         if hasattr(self, 'label'):
             self.label.setFont(QtGui.QFont('Arial', int(base_size * 1.5), QtGui.QFont.Bold))
         if hasattr(self, 'ans_label'):
@@ -148,6 +146,7 @@ class YNWidget(QtWidgets.QWidget):
         self.saver = None
 
     def play_sound(self,file_path):
+        """Helper to play audiio cues."""
         if os.path.exists(file_path):
             url = QUrl.fromLocalFile(file_path)
             content = QMediaContent(url)
@@ -184,7 +183,7 @@ class YNWidget(QtWidgets.QWidget):
                 self.yes_button.setStyleSheet(self.detected_style)
 
     def trigger_pause(self):
-        """Helper to safely jump into pause mode"""
+        """Helper to safely move into pause mode"""
         if self.logger: self.logger.log("Pause triggered via Long Constriction")
         self.state = "WAIT_RELEASE"
         self.pending_selection = False
@@ -196,9 +195,8 @@ class YNWidget(QtWidgets.QWidget):
         self.monitor.reset_monitor()
 
     def show_timeout_dialog(self):
-        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        """Pauses the interface and requests the caregiver's assistance."""
         
-        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Warning)
         msg.setWindowTitle("Errore di Rilevamento")
@@ -230,13 +228,13 @@ class YNWidget(QtWidgets.QWidget):
 
         is_constricted = self.monitor.drop_start_time is not None
 
-        # State machine logic
+        # STATE MACHINE logic. Check DOCUMENTATION for the detailed diagram.
         if self.state == "INITIALIZATION":
             self.ans_label.setText("Guarda lontano e ascolta la domanda")
 
             self.monitor.baseline_collection(raw_area)
 
-            #if time.time() - self.state_start_time > self.t_init:
+            # Activates answers scanning and increases counter at caregiver's click.
             if self.advance_trial:
                 self.advance_trial = False
                 self.qa_counter+=1
@@ -340,12 +338,9 @@ class YNWidget(QtWidgets.QWidget):
             # Wait 5 seconds before restarting the loop
             remaining = self.t_cool - (time.time() - self.state_start_time)
             self.ans_label.setText(f"Rispondi a un'altra domanda tra {remaining: .1f}...")
-            #self.ans_label.setText("Ascolta la prossima domanda")
 
             if remaining <=0:
                 self.advance_trial= False
-                # reset for new acquisition
-                #if self.logger : self.logger.log(f"Question {self.qa_counter} sked. Moving to answer {self.qa_counter}")
                 self.reset_to_initialization()
 
         # Save data to CSV
