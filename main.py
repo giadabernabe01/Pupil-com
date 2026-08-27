@@ -33,8 +33,8 @@ from DigitalEye import DigitalEyeWidget
 # SUBJECT DATA HANDLER
 # ---------------------------------------------------------
 def get_subject_folder_name(base_path, subject_name):
-    """Scans base_path for folders named subject_name_XX
-    Returns the next sequence: subject_name_01, subject_name_02 etc """
+    """Scans base_path for folders named subjectname_XX
+    Returns the next sequence: subjectname_01, subjectname_02 etc """
 
     if not os.path.exists(base_path):
         os.makedirs(base_path)
@@ -42,7 +42,6 @@ def get_subject_folder_name(base_path, subject_name):
     existing_folders = os.listdir(base_path)
 
     max_count = 0
-    #found_any = False
     for folder in existing_folders:
         if folder.startswith(f"{subject_name}_"):
             try:
@@ -104,14 +103,16 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.device_type = device_type
         active_fps = self.params.get("active_fps", 60) 
         threshold = self.params["constriction"].get("threshold", 0.75)
+        # Set up the objects for the main menu features
         self.filter = AreaFilter(fps=active_fps, device_type=self.device_type)
         self.monitor = ConstrictionMonitor(fps=active_fps, thresh=threshold, device_type=self.device_type)
         self.logger = SessionLogger(folder_path, "MainMenu")
         self.saver = DataSaver(folder_path, "MainMenu")
         self.player = QMediaPlayer()
-        self.last_spoken_index = -1
-        self.system_armed = False
+        self.last_spoken_index = -1 # index counter for scanning update with audio cue
+        self.system_armed = False # device ready flag
 
+        # parameters retrieval
         gui_config = self.params.get("gui", {})
         self.t_scan = gui_config.get("scan_interval_dur", 3.5)
         self.t_init = gui_config.get("initialization_dur", 3.0)
@@ -121,20 +122,20 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        # --- HEADER ---
+        # HEADER
         header_layout = QtWidgets.QHBoxLayout()
         
-        # 1. Spacer to balance the layout
+        # Spacer to balance the layout
         left_dummy = QtWidgets.QWidget()
         left_dummy.setFixedSize(60, 1) 
 
-        # 2. Centered Title
+        # Centered Title
         self.label = QtWidgets.QLabel("MENÙ PRINCIPALE")
         # Use a dynamic font size calculation later if needed, but 26px is a good safe base
         self.label.setStyleSheet("font-size: 26px; font-weight: bold; color: white;")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         
-        # 3. Settings Button (Top Right)
+        # Settings Button (Top Right)
         self.settings_btn = QtWidgets.QPushButton("⋮")
         self.settings_btn.setFixedSize(60, 50) # Touch friendly size
         self.settings_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
@@ -155,7 +156,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         
         self.main_layout.addLayout(header_layout)
 
-        # Add Digital Twin to Main Menu
+        # Add Eye Digital Twin to Main Menu
         self.digital_eye = DigitalEyeWidget(device_type=self.device_type)
         self.main_layout.addWidget(self.digital_eye, alignment=QtCore.Qt.AlignCenter)
 
@@ -165,7 +166,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.fixation_dot.setStyleSheet("background-color: red; border-radius: 8px;")
         self.main_layout.addWidget(self.fixation_dot, alignment=QtCore.Qt.AlignCenter)
 
-        # --- STATUS LABELS ---
+        # STATUS LABELS for real time update in signal state and main menu state
         status_layout = QtWidgets.QHBoxLayout()
         self.live_label = QtWidgets.QLabel("Segnale: In attesa...")
         self.live_label.setStyleSheet("font-size: 16px; color: #888888;")
@@ -180,7 +181,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         
         self.main_layout.addLayout(status_layout)
 
-        # --- RESPONSIVE BUTTON GRID ---
+        # RESPONSIVE BUTTON GRID
         grid_layout = QtWidgets.QGridLayout()
         grid_layout.setSpacing(15)
 
@@ -189,9 +190,9 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.yn_button = QtWidgets.QPushButton("SI O NO")
         self.keyboard_button = QtWidgets.QPushButton("TASTIERA")
         self.game_button = QtWidgets.QPushButton("GIOCO")
-        #self.calibration_button = QtWidgets.QPushButton("CALIBRAZIONE")
+        #self.calibration_button = QtWidgets.QPushButton("CALIBRAZIONE") #commented for now until an automated threshold calibration algorithm is developed
 
-        size_policy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        size_policy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding) # for smooth resizing of the window
 
         for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button]:
         #for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button, self.calibration_button]:
@@ -219,16 +220,16 @@ class MainMenuWidget(QtWidgets.QWidget):
         #grid_layout.addWidget(self.calibration_button, 2, 0, 1, 2)
 
         # Add the grid to the main layout with a stretch factor equal to 1
-        # This tells the layout: "Give the buttons as much space as possible"
+        # (the buttons take as much space as possible)
         self.main_layout.addLayout(grid_layout, 1) 
 
-        # --- SEPARATOR ---
+        # SEPARATOR
         self.launch_divider = QtWidgets.QFrame()
         self.launch_divider.setFrameShape(QtWidgets.QFrame.HLine)
         self.launch_divider.setStyleSheet("color: #444; margin: 10px 0;")
         self.main_layout.addWidget(self.launch_divider)
 
-        # --- FOOTER ---
+        # FOOTER - buttons for starting up the acquisition via eye-tracker
         footer_layout = QtWidgets.QHBoxLayout()
         footer_layout.setSpacing(15)
 
@@ -249,7 +250,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         
         self.setLayout(self.main_layout)
 
-        # Scanning setup
+        # SCANNING STATE MACHINE SETUP
         self.scan_options = [
             self.training_button,
             self.yn_button, 
@@ -259,10 +260,10 @@ class MainMenuWidget(QtWidgets.QWidget):
         ]
         self.current_index = 0
         self.scan_start_time = 0
-        self.state = "INITIALIZATION"
+        self.state = "INITIALIZATION" # initial state that will be updated at timeout
         self.state_start_time = time.time()
 
-        # Styles for active/inactive
+        # Styles for buttons: active = highlighted and selectable with PAR, inactive = not highlighted, so not selectable with PAR
         self.active_style = """
             background-color: #0078d7; 
             color: white; 
@@ -277,18 +278,19 @@ class MainMenuWidget(QtWidgets.QWidget):
             border-radius: 10px;
         """
         
-        # Initial Check
-        self.check_pupil_process()
+        # Initial Check to disable start device button if it's already acquiring pupil data
+        self.check_pupil_process() 
 
     def end_session(self):
         """Saves the continuous Main Menu CSV to disk"""
+        # the contonuous CSV is not so useful for post-hoc, but it's a nice to have anyways
         if hasattr(self, 'saver') and self.saver:
             self.saver.save_file()
             if self.logger: self.logger.log("MainMenu CSV aggiornato su disco.")
 
 
     def set_device_type(self, new_device):
-        """Hot-swap of ui without recreating the widget"""
+        """Hot-swap (device change when session has already been started) of UI without recreating the widget"""
         self.device_type = new_device
         self.check_pupil_process()
         ready_text = "Dispositivo pronto"
@@ -297,13 +299,17 @@ class MainMenuWidget(QtWidgets.QWidget):
     def arm_system(self):
         """Activates pupil tracking when system is armed"""
         self.system_armed = True
+        # hides setup buttons
         self.ready_btn.hide()
         self.launch_button.hide()
 
+        # resets ConstrictionMonitor to collect a fresh baseline
         self.monitor.reset_monitor()
 
+        #changes instruction label content
         self.instruction_label.setText("Sistema attivo")
 
+        # makes buttons clickable 
         #self.calibration_button.setEnabled(True)
         self.yn_button.setEnabled(True)
         self.game_button.setEnabled(True)
@@ -313,13 +319,14 @@ class MainMenuWidget(QtWidgets.QWidget):
         if self.logger: self.logger.log("System Armed manually: Glasses ready.")
 
     def enable_menu(self):
-        """ Called when Gazepoint is connected"""
+        """ Called when acquisition software is connected"""
         self.training_button.setEnabled(True)
         self.yn_button.setEnabled(True)
         self.game_button.setEnabled(True)
         #self.calibration_button.setEnabled(True)
         self.keyboard_button.setEnabled(True)
-        
+
+        # sets all the buttons to unabled for the INIIALISATION state
         self.training_button.setStyleSheet(self.inactive_style)
         self.yn_button.setStyleSheet(self.inactive_style)
         self.game_button.setStyleSheet(self.inactive_style)
@@ -329,7 +336,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.live_label.setText("Segnale: Connesso")
 
     def check_pupil_process(self):
-        """Checks if the acquisition software is running and disables the button if true"""
+        """Checks with subprocess if the acquisition software is running and disables the button if true"""
         self.launch_button.show()
         try:
             output = subprocess.check_output("tasklist", shell = True).decode()
@@ -354,13 +361,13 @@ class MainMenuWidget(QtWidgets.QWidget):
         import glob
         for old_file in glob.glob(os.path.join(base_dir, "temp_speech_*.wav")):
             try:
-                os.remove(old_file)
+                os.remove(old_file) # removes previous temporary .mp3 if present
             except OSError:
                 pass 
                 
         unique_filename = f"temp_speech_{int(time.time() * 1000)}.wav"
         temp_audio_path = os.path.join(base_dir, unique_filename)
-        self.tts_thread = TTSWorkerThread(word, temp_audio_path)
+        self.tts_thread = TTSWorkerThread(word, temp_audio_path) # passes the word to the tts speech synth
         self.tts_thread.audio_ready_signal.connect(self.play_sound)
         self.tts_thread.start()
 
@@ -375,6 +382,7 @@ class MainMenuWidget(QtWidgets.QWidget):
             print(f"File audio non trovato: {file_path}")
 
     def update_visual_scanning(self):
+        """Updates buttons highlight and respective vocal cues."""
         elapsed = time.time() - self.scan_start_time
         if elapsed >= self.t_scan:
             self.scan_start_time = time.time()
@@ -391,10 +399,9 @@ class MainMenuWidget(QtWidgets.QWidget):
                 btn.setStyleSheet(self.inactive_style)
 
     def show_timeout_dialog(self):
-        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        """Pauses the interface and requests caregiver support to restore the acquisition after 5s signal loss."""
         
-        # QMessageBox ferma automaticamente l'interazione con il resto della finestra
-        msg = QMessageBox(self)
+        msg = QMessageBox(self) # stops interaction with the rest of the window
         msg.setIcon(QMessageBox.Warning)
         msg.setWindowTitle("Errore di Rilevamento")
         msg.setText("Il sistema non riesce a rilevare correttamente la pupilla.\nControlla l'inquadratura e clicca riprova.")
@@ -410,22 +417,24 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.state_start_time = time.time()
     
     def update_data(self, raw_area, raw_x=0, raw_y=0):
-        #This function is called by MainWindow to update live label and digital eye
+        """Core of the STATE MACHINE. Called by MainWindow to update scanning, area, digital eye."""
         if hasattr(self, 'digital_eye'):
             self.digital_eye.update_eye(raw_x, raw_y, raw_area)
-        area = self.filter.area_filtering(raw_area)
+        area = self.filter.area_filtering(raw_area) # filters incoming raw area
 
+        # 5s signal lost timeout dialog activation
         if self.filter.timeout_triggered:
             self.show_timeout_dialog()
             return
         
         val =  area if area is not None else 0.0
-        self.live_label.setText(f"Area registrata: {val: .2f}") 
+        self.live_label.setText(f"Area registrata: {val: .2f}") # live update of the filtered area value
 
+        # thresholds update
         current_thresh = self.monitor.current_sma_thresh
         exit_thresh = self.monitor.exit_thresh
 
-        machine_status = "UNARMED"
+        machine_status = "UNARMED" # like this until the caregiver clicks "Dispositivo pronto"
         status = 0
 
         if not self.system_armed:
@@ -435,14 +444,15 @@ class MainMenuWidget(QtWidgets.QWidget):
             machine_status = f"ARMED_{self.state}"
 
             if not getattr(self, 'settings_open', False):
-                # State Machine
-                if self.state == "INITIALIZATION":
+                # STATE MACHINE LOGIC (check DOCUMENTATION for complete state machine diagrams)
+                if self.state == "INITIALIZATION": #baseline collection state
                     self.live_label.setText("Inizializzazione Menu... Guarda lontano")
                     self.monitor.baseline_collection(area)
 
                     # use inactive style for all
                     for btn in self.scan_options: btn.setStyleSheet(self.inactive_style)
 
+                    # timer for initialisation
                     if time.time() - self.state_start_time > self.t_init:
                         self.state = "SCANNING"
                         self.scan_start_time = time.time()
@@ -450,26 +460,26 @@ class MainMenuWidget(QtWidgets.QWidget):
                         self.live_label.setText("Menu Attivo: Seleziona l'opzione desiderata")
 
                 elif self.state == "SCANNING":
-                    self.update_visual_scanning()
+                    self.update_visual_scanning() # highlight update every scan_time timeout
 
                     # Trigger Logic
-                    if status == 1:
+                    if status == 1: # short PAR detected --> selection command
                         selected_btn = self.scan_options[self.current_index]
                         print(f"Menu: Selezionato {selected_btn.text()}")
 
-                        selected_btn.click()
+                        selected_btn.click() # command mapped as a button click
 
                         self.state = "COOLDOWN"
                         self.state_start_time = time.time()
 
-                elif self.state == "COOLDOWN":
+                elif self.state == "COOLDOWN": # cooldown state entered after a PAR detection
                     remaining = self.t_init - (time.time() - self.state_start_time)
                     self.live_label.setText("Attendi {remaining: .1f}...")
 
                     self.monitor.constriction_detector(area)
 
                     if remaining <= 0:
-                        # re-initialization
+                        # re-initialization to clear all the previous activity
                         self.monitor.baseline_buffer.clear()
                         self.monitor.long_trigger_handled = False
                         self.monitor.short_trigger_handled = False
@@ -483,6 +493,7 @@ class MainMenuWidget(QtWidgets.QWidget):
             self.saver.add_data(raw_area, val, current_thresh, exit_thresh, status, machine_status)                
 
     def launch_software(self):
+        """Lauches the eye-tracker acquisition software depending on device_type"""
         if self.device_type == "gazepoint":
             path = r"C:\Program Files (x86)\Gazepoint\Gazepoint\bin64\Gazepoint.exe"
         else:
@@ -505,14 +516,14 @@ class MainMenuWidget(QtWidgets.QWidget):
             self.logger.log(f"Error: {self.device_type} path not found")
 
     def resizeEvent(self, event):
-        """Scala dinamicamente il testo e aggiorna gli stili del visual scanner"""
+        """Dynamically scales the text and updates styles in visual scanner."""
         super().resizeEvent(event)
         
-        # 1. Calcola la dimensione del font come percentuale dell'altezza della finestra
+        # Calculates font size as the widnow's height %
         window_height = self.height()
         button_font_size = max(14, int(window_height * 0.03))
         
-        # 2. Aggiorna i template di stile aggiungendo il nuovo font-size dinamico
+        # Updates style templates with the new dynamic font size
         self.active_style = f"""
             background-color: #0078d7; 
             color: white; 
@@ -529,8 +540,7 @@ class MainMenuWidget(QtWidgets.QWidget):
             border-radius: 10px;
         """
         
-        # 3. Riapplica immediatamente gli stili ai bottoni per aggiornarli a schermo
-        # Assicurandoci di rispettare quale bottone è attualmente "illuminato" dal visual scanner
+        # Re-applies styles to buttons for update, making sure the currently highlighted button is preserved.
         if hasattr(self, 'scan_options'):
             for i, btn in enumerate(self.scan_options):
                 if hasattr(self, 'current_index') and i == self.current_index and self.system_armed:
