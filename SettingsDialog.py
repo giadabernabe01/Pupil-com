@@ -55,7 +55,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.general_tab.setLayout(self.general_layout)
         self.tabs.addTab(self.general_tab, "Generali")
 
-        # 2. ADDED DEVICE SWITCHER UI to the top of General tab
+        # DEVICE SWITCHER to the top of General tab
         dev_group = QtWidgets.QGroupBox("Dispositivo Attivo")
         dev_layout = QtWidgets.QVBoxLayout()
         self.device_combo = QtWidgets.QComboBox()
@@ -102,13 +102,13 @@ class SettingsDialog(QtWidgets.QDialog):
                 label = QtWidgets.QLabel(label_text)
 
                 if isinstance(value, int) and not isinstance(value, bool):
-                    # It's an integer! Create a standard QSpinBox
+                    # Integer: create a standard QSpinBox
                     spin_box = QtWidgets.QSpinBox()
                     spin_box.setRange(0, 10000) # Adjust max limit as needed
                     spin_box.setValue(value)
                     
                 elif isinstance(value, float):
-                    # It's a float! Create a QDoubleSpinBox
+                    # Float: create a QDoubleSpinBox
                     spin_box = QtWidgets.QDoubleSpinBox()
                     spin_box.setRange(0.0, 10000.0)
                     if key == "threshold":
@@ -158,14 +158,14 @@ class SettingsDialog(QtWidgets.QDialog):
     def save_and_close(self):
         """Read inputs and write back to JSON safely"""
         
-        # 1. DEEPCOPY prevents the deletion of text/boolean settings!
+        # DEEPCOPY prevents the deletion of text/boolean settings
         new_data = copy.deepcopy(self.current_params)
 
         for (section, key), widget in self.inputs.items():
             if section not in new_data:
                 new_data[section] = {}
             
-            # 2. Extract value based on the widget type
+            # Extract value based on the widget type
             if isinstance(widget, QtWidgets.QCheckBox):
                 new_data[section][key] = widget.isChecked()
             elif isinstance(widget, QtWidgets.QLineEdit):
@@ -181,7 +181,7 @@ class SettingsDialog(QtWidgets.QDialog):
         except Exception as e:
             print(f"Error saving JSON: {e}")
 
-    # 3. ADDED this function so main.py can read the choice
+    # ADDED this function so main.py can read the choice
     def get_selected_device(self):
         return self.device_combo.currentData()
 
