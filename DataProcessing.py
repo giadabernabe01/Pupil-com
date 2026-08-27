@@ -18,12 +18,10 @@ class AreaFilter:
     def __init__(self, fps=60, thresh=0.85, device_type="gazepoint"):
         
         if device_type == "gazepoint":
-            #print("Using Gazepoint min and max area values")
             self.amin, self.amax = 50.0, 1000.0 # area is measured in square pixels
             self.ebf_thresh = 100.0
             self.max_array_len = 1000
         else:
-            #print("Using Pupil Core min and max area values")
             self.amin, self.amax = 1500.0, 10000.0 # area is measured in square pixels
             self.ebf_thresh = 500.0
             self.max_array_len = 2000
@@ -31,7 +29,8 @@ class AreaFilter:
         self.area_not_valid = False
         self.area_not_valid_time = 0.0
         self.timeout_triggered = False
-        #filter initializations
+
+        # FILTER INITIALISATIONS
         self.pupil_areas_raw = deque(maxlen=self.max_array_len)
         self.pupil_areas = deque(maxlen=self.max_array_len)
         self.pupil_areas_diffs = deque(maxlen=self.max_array_len)
@@ -42,16 +41,17 @@ class AreaFilter:
 
     def area_filtering(self, new_area):
         self.pupil_areas_raw.append(new_area)
-        # Control on the pupil area with respect to physiological dimensions
+        
+        # PHYSIOLOGICAL DIMENSIONS CONTROL
         if self.amin <= new_area <= self.amax:
             self.pupil_areas.append(new_area)
-            if self.area_not_valid: # if the previous frame was invalid, reset flag and timer
+            if self.area_not_valid: 
                 self.area_not_valid = False
                 self.area_not_valid_time = 0.0
                 self.timeout_triggered = False 
         elif len(self.pupil_areas) > 0:
-            self.pupil_areas.append(self.pupil_areas[-1]) # temporarily store the previous valid frame
-            if not self.area_not_valid: # start counting for how long the frames are invalid
+            self.pupil_areas.append(self.pupil_areas[-1]) # Temporarily store previous valid frame
+            if not self.area_not_valid: 
                 self.area_not_valid = True
                 self.area_not_valid_time = time.time()
             else:
@@ -59,11 +59,11 @@ class AreaFilter:
                 if elapsed > 5 and not self.timeout_triggered:
                     self.timeout_triggered = True
         else:
-            return new_area # no valid data yet --> temporarily fill with raw data
+            return new_area # No valid data yet, temporarily fill with raw data
 
         if len(self.pupil_areas) > 0:
             
-            # event-based filter
+            # EVENT-BASED FILTER (EBF)
             self.pupil_areas_ebf.append(self.pupil_areas[-1])
             if len(self.pupil_areas_ebf) > 1:
                 diff = abs(self.pupil_areas_ebf[-1] - self.pupil_areas_ebf[-2])
@@ -76,21 +76,20 @@ class AreaFilter:
                     if diff > self.ebf_thresh + baseline:
                         self.reject_count += 1
                         
-                        # Max allowed consecutive rejected frames (0.8 seconds)
-                        max_rejects = int(self.fps * 0.8) 
+                        max_rejects = int(self.fps * 0.8) # Max allowed consecutive rejected frames
                         
                         if self.reject_count < max_rejects:
-                            # It's a short spike/blink. Reject it and hold the old value.
+                            # Short spike/blink: Reject and hold old value
                             self.pupil_areas_ebf[-1] = self.pupil_areas_ebf[-2]
                             self.pupil_areas_diffs[-1] = baseline
                         else:
-                            # Accept the new low value and reset the counter.
+                            # Prolonged drop: Accept new low value and reset counter
                             self.reject_count = 0
                     else:
-                        # Normal physiological movement. Accept and reset counter.
+                        # Normal physiological movement: Accept and reset counter
                         self.reject_count = 0
                 
-            # moving average
+            # MOVING AVERAGE FILTER
             ma_win = int(self.fps / 2)
 
             if len(self.pupil_areas_ebf) >= ma_win:
@@ -102,10 +101,9 @@ class AreaFilter:
             self.pupil_areas_fin.append(res)
 
             return res
-
-        #return new_area
     
     def reset(self):
+        """Clears all data buffers and resets timeout flags."""
         self.pupil_areas_raw.clear()
         self.pupil_areas.clear()
         self.pupil_areas_diffs.clear()
@@ -114,6 +112,7 @@ class AreaFilter:
         self.area_not_valid = False
         self.area_not_valid_time = 0.0
         self.timeout_triggered = False
+
 
 class ConstrictionMonitor:
     """Class for detecting pupil constriction and recovery events."""
@@ -124,7 +123,7 @@ class ConstrictionMonitor:
         self.long_dur = long_dur
         self.extra_dur = extra_dur
         self.device_type = device_type
-        self.baseline_buffer = deque(maxlen=round(self.fps*2)) # last 1 seconds buffer
+        self.baseline_buffer = deque(maxlen=round(self.fps*2)) 
         self.drop_start_time = None
         self.short_trigger_handled = False
         self.long_trigger_handled = False
@@ -138,58 +137,59 @@ class ConstrictionMonitor:
         self.short_trigger_handled = False
         self.long_trigger_handled = False
         self.extra_trigger_handled = False
-        #self.baseline_buffer.clear() # Critical: forces a fresh threshold calculation
 
     def baseline_collection(self, filt_area):
-
-        # safety check for startup/empty data
+        """Collects initial data to calculate the first threshold baseline."""
         if filt_area is None or filt_area == 0:
             return False
-        # collect baseline data for first 2 seconds
+        
         if len(self.baseline_buffer) < self.fps*2:
             self.baseline_buffer.append(filt_area)
 
     def constriction_detector(self, filt_area):
-
-        """Returns:
+        """
+        Returns:
         0 = No event
         1 = Short constriction 
         2 = Long constriction 
-        3 = Special feature for keyboard"""
-
-        # safety check for startup/empty data
+        3 = Extra-long constriction (Keyboard feature)
+        """
         if filt_area is None or filt_area == 0:
             return 0
 
+        # UPDATE THRESHOLD
         if len(self.baseline_buffer) > 0:
             current_mean = np.mean(self.baseline_buffer) 
             self.current_sma_thresh = current_mean * self.thresh 
         else:
             self.current_sma_thresh = 0.0
 
+        # LOCK EXIT THRESHOLD IF EVENT IS ONGOING
         if self.short_trigger_handled and self.exit_thresh is not None:
             active_thresh = self.exit_thresh
         else:
             active_thresh = self.current_sma_thresh
 
-        # check whether last value is below threshold
+        # CHECK FOR CONSTRICTION
         if filt_area < active_thresh:
-            # check whether this is the first below threshold
+            
             self.above_ma = (filt_area > self.current_sma_thresh)
+            
             if self.drop_start_time is None:
                 self.drop_start_time = time.time()
                 self.exit_thresh = self.current_sma_thresh
                 self.above_ma = False
                 self.cross_count = 0
-            # check how long it has been below threshold
+                
             elapsed = time.time() - self.drop_start_time
-            #check if it's below moving average as well and count crossings
+            
+            # MA CROSSING TRACKER
             if self.above_ma and self.cross_count == 0:
                 self.cross_count += 1 
             elif not self.above_ma and self.cross_count == 1:
                 self.cross_count += 1
-            # set new threshold and mark a new constriction start if the signal hasn't gone above fixed threshold 
-            # but has crossed ma threshold again
+                
+            # EVENT OVER - RESET
             if self.cross_count == 2:
                 self.exit_thresh = None
                 self.drop_start_time = None
@@ -199,37 +199,39 @@ class ConstrictionMonitor:
                 self.baseline_buffer.append(filt_area)
                 return 0
 
+            # TRIGGER EVALUATION
             if elapsed >= self.extra_dur:
-                # if below threshold for longer than extra_dur --> extra feature unlocked
                 if not self.extra_trigger_handled:
                     print(f"Extra constriction detected")
                     self.extra_trigger_handled = True
                     return 3
             elif elapsed >= self.long_dur:
-                # if below threshold for longer than long_dur --> it's a long trigger command!
                 if not self.long_trigger_handled:
                     print(f"Long constriction detected")
                     self.long_trigger_handled = True
                     return 2
-            # if below threshold for longer than short_dur --> it's a selection!
             elif elapsed >= self.short_dur:
                 if not self.short_trigger_handled:
                     print("Short constriction detected.")
                     self.short_trigger_handled = True
                     return 1
-            self.baseline_buffer.append(filt_area) # add value to keep calculating moving average
+                    
+            self.baseline_buffer.append(filt_area)
+            
         else:
-            # reset timer
+            # NO EVENT - RESET FLAGS
             self.exit_thresh = None
             self.drop_start_time = None
             self.short_trigger_handled = False
             self.long_trigger_handled = False
             self.extra_trigger_handled = False
             self.baseline_buffer.append(filt_area)
-        return 0 # no new event.
+            
+        return 0 
+
 
 # ---------------------------------------------------------
-# Gazepoint receiver
+# RECEIVER: GAZEPOINT
 # ---------------------------------------------------------
 
 class GazepointReceiver(QtCore.QThread):
@@ -245,6 +247,7 @@ class GazepointReceiver(QtCore.QThread):
         self.data_queue = queue.Queue()
 
     def get_all_frames(self):
+        """Pulls all pending tuples from the queue."""
         frames = []
         while not self.data_queue.empty():
             try:
@@ -296,7 +299,6 @@ class GazepointReceiver(QtCore.QThread):
                         
                         if d is not None:
                             area = np.pi * (d / 2.0) ** 2
-                            #self.data_queue.put(area) 
                         else:
                             area = None
 
@@ -313,21 +315,21 @@ class GazepointReceiver(QtCore.QThread):
 
                         self.data_queue.put((area, bpog_x, bpog_y)) if area is not None else self.data_queue.put((0.0, bpog_x, bpog_y))
             except socket.timeout:
-                continue # Normal timeout, loop back to check if self.running is False
+                continue 
             except Exception as e:
                 if self.running:
                     self.connected = False
                     
-        # Cleanup
+        # CLEANUP
         if self.sock:
             self.sock.close()
 
     def stop(self):
         self.running = False
-        self.wait(1500) # Give it 1.5 seconds max to clean up network ports safely
+        self.wait(1500) 
 
 # ---------------------------------------------------------
-# ZMQ Thread: receives pupil diameter from Pupil Labs
+# RECEIVER: PUPIL LABS CORE
 # ---------------------------------------------------------
 class PupilLabsReceiver(QtCore.QThread):
     connected_signal = QtCore.pyqtSignal(bool) 
@@ -339,6 +341,7 @@ class PupilLabsReceiver(QtCore.QThread):
         self.data_queue = queue.Queue()
 
     def get_all_frames(self):
+        """Pulls all pending tuples from the queue."""
         frames = []
         while not self.data_queue.empty():
             try:
@@ -348,7 +351,7 @@ class PupilLabsReceiver(QtCore.QThread):
         return frames
     
     def run(self):
-        # 1. CREATE ZMQ CONTEXT INSIDE THE THREAD TO PREVENT DEADLOCKS
+        # THREAD-SAFE ZMQ CONTEXT
         context = zmq.Context()
         req = None
         sub = None
@@ -371,7 +374,7 @@ class PupilLabsReceiver(QtCore.QThread):
                     self.connected_signal.emit(True)
                 except Exception as e:
                     print(f"Failed to connect to Pupil Labs: {e}")
-                    # Safely close failed sockets before retrying
+                    # SAFELY CLOSE FAILED SOCKETS
                     if req: req.close()
                     if sub: sub.close()
                     self.msleep(1000)
@@ -385,7 +388,6 @@ class PupilLabsReceiver(QtCore.QThread):
                     d = latest_msg.get("diameter", None)
                     if d is not None:
                         area = np.pi * (float(d)/2)**2
-                        #self.data_queue.put(area)
                     else:
                         area = 0.0
                     norm_pos = latest_msg.get("norm_pos", [0.0, 0.0])
@@ -394,16 +396,16 @@ class PupilLabsReceiver(QtCore.QThread):
                     
                     self.data_queue.put((area, px, py))
             except zmq.Again:
-                pass # Normal timeout
+                pass 
             except Exception as e:
                 if self.running:
                     print(f"Receiver Warning: {e}")
         
-        # 2. CLEANUP MEMORY ON EXIT
+        # MEMORY CLEANUP
         if req: req.close()
         if sub: sub.close()
         context.term()
 
     def stop(self):
         self.running = False
-        self.wait(1500) # Give the thread 1.5 seconds max to die, otherwise force continue!
+        self.wait(1500)
