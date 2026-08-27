@@ -554,77 +554,60 @@ class MainMenuWidget(QtWidgets.QWidget):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
+        
+        # PARAMETER LOADING & UI SETUP
         self.params = load_parameters()
         self.setWindowTitle("Pupil-com")
+        self.resize(800, 600)
+        
+        # ICON SETUP
         try:
             icon_path = os.path.join(os.path.dirname(__file__), "Images", "Pupil-com_icon.ico")
             self.setWindowIcon(QIcon(icon_path))
         except:
-            error_msg = "Icona non trovata. Controlla che 'Pupil-com_icon.ico' sia nella cartella Images."
-            print(error_msg)
-        self.resize(800,600)
+            print("Icona non trovata. Controlla che 'Pupil-com_icon.ico' sia nella cartella Images.")
 
-        """self.shutdown_btn = QtWidgets.QPushButton("X", self)
-        self.shutdown_btn.setFixedSize(50,40)
-        self.shutdown_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))"""
-
-        #self.shutdown_btn.setStyleSheet(
-        """
-            QPushButton {
-                background-color: #ff4444; 
-                color: white; 
-                font-weight: bold;
-                border: none;
-                border-bottom-left-radius: 10px;
-            }
-            QPushButton:hover {
-                background-color: #cc0000;
-            }
-        """#)"""
-
-        #self.shutdown_btn.clicked.connect(self.close)
-
-        # Stack setup
+        # WIDGET STACK SETUP
         self.stack = QtWidgets.QStackedWidget()
         self.setCentralWidget(self.stack)
 
-        # Startup Widget and connections
+        # STARTUP WIDGET CONFIGURATION
         self.startup_widget = StartupWidget()
         self.stack.addWidget(self.startup_widget) # index 0
         self.startup_widget.login_confirmed.connect(self.setup_subject_session)
         self.startup_widget.skip_confirmed.connect(self.setup_anonymous_session)
-        #self.showFullScreen()
 
     def open_settings_window(self):
-        # 1. TURN ON THE BLINDFOLD
+        """Pauses the UI, opens the Settings dialog, and handles parameter/hardware updates on save."""
+        
+        # PAUSE SIGNAL PROCESSING (BLINDFOLD)
         self.menu_widget.settings_open = True
         if hasattr(self.menu_widget, 'monitor'):
             self.menu_widget.monitor.reset_monitor()
 
-        # Pass the currently active device into the dialog
+        # OPEN DIALOG AND WAIT FOR USER
         dialog = SettingsDialog(self, params_file="parameters.json", current_device=self.selected_device)
+        result = dialog.exec_()
 
-        # 2. FREEZE AND WAIT FOR USER
-        result = dialog.exec_() # Script pauses here until dialog closes
-
-        # 3. TURN OFF THE BLINDFOLD (Always runs, whether they hit Save or Cancel)
+        # RESUME SIGNAL PROCESSING
         self.menu_widget.settings_open = False
 
-        # 4. PROCESS THE SETTINGS IF THEY HIT SAVE
+        # PROCESS SAVED SETTINGS
         if result == QtWidgets.QDialog.Accepted:
             print("Reloading parameters...")
             self.params = load_parameters()
             
+            # GUI CONFIGURATION UPDATE
             gui_config = self.params.get("gui", {})
             self.menu_widget.t_scan = gui_config.get("scan_interval_dur", 3.5)
             self.menu_widget.t_init = gui_config.get("initialization_dur", 3.0)
             
-            # --- EXTRACT MISSING VARIABLES FOR THE MONITOR ---
+            #MONITOR VARIABLES EXTRACTION
             constrict_config = self.params.get("constriction", {})
             self.short = constrict_config.get("short_constr_dur", 0.5)
             self.long = constrict_config.get("long_constr_dur", 3.0)
 
-            # --- DEVICE HOT-SWAP LOGIC ---
+            # DEVICE HOT-SWAP LOGIC
             new_device = dialog.get_selected_device()
             
             if new_device != self.selected_device:
@@ -635,7 +618,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.selected_device = new_device
                 self.menu_widget.set_device_type(self.selected_device)
                 
-                # 1. Update the Active FPS in memory
+                # UPDATE ACTIVE FPS
                 if self.selected_device == "gazepoint":
                     self.params["active_fps"] = self.params["constriction"].get("gp3_fps", 60)
                 else:
@@ -644,7 +627,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 active_fps = self.params["active_fps"]
                 threshold = self.params["constriction"].get("threshold", 0.75)
                 
-                # 2. Overwrite the MainMenu's filters with the new FPS parameters
+                # OVERWRITE MAIN MENU FILTERS
                 self.menu_widget.filter = AreaFilter(fps=active_fps, device_type=self.selected_device)
                 self.menu_widget.monitor = ConstrictionMonitor(
                     fps=active_fps, 
@@ -654,58 +637,54 @@ class MainWindow(QtWidgets.QMainWindow):
                     long_dur=self.long
                 )
                 
-                # 3. Stop the polling timer so it doesn't try to pull from a dying thread
+                # STOP POLLING TO PREVENT THREAD CONFLICTS
                 if hasattr(self, 'poll_timer'):
                     self.poll_timer.stop()
 
-                # 4. Safely stop and destroy the old receiver thread
+                # DESTROY OLD RECEIVER
                 if hasattr(self, 'receiver'):
                     self.receiver.stop() 
                     
-                # 5. Instantiate the brand new hardware receiver
+                # INSTANTIATE NEW HARDWARE RECEIVER
                 if self.selected_device == "gazepoint":
                     self.receiver = GazepointReceiver()
                 else:
                     self.receiver = PupilLabsReceiver()
                     
-                # 6. Re-wire the successful connection signal to the UI
+                # RE-WIRE CONNECTION SIGNAL
                 self.receiver.connected_signal.connect(self.menu_widget.enable_menu)
                 
-                # 7. Reset Main Menu UI back to "Waiting for Connection" state
+                # RESET MAIN MENU UI
                 self.menu_widget.live_label.setText("Segnale: In attesa...")
-                self.menu_widget.check_pupil_process() # Checks if the correct background app is running
+                self.menu_widget.check_pupil_process()
                 
                 for btn in self.menu_widget.scan_options:
                     btn.setEnabled(False)
                     btn.setStyleSheet(self.menu_widget.inactive_style)
                     
-                # 8. Start the new thread and resume polling the queue!
+                # START NEW RECEIVER THREAD AND RESUME POLLING
                 self.receiver.start()
                 if hasattr(self, 'poll_timer'):
-                    self.poll_timer.start(33) # Resume ~30 FPS UI updates
+                    self.poll_timer.start(33)
 
-        # 5. FINAL RESET TO CLEAR GHOST INPUTS
+        # FINAL RESET TO CLEAR GHOST INPUTS
         if hasattr(self.menu_widget, 'monitor'):
             self.menu_widget.monitor.reset_monitor()
-
             
     def setup_subject_session(self, subject_name, device_type):
-        """Called when user enters a name"""
+        """Creates session folder and initialises application for a known subject."""
         self.selected_device = device_type
         device_suffix = "GP3" if device_type == "gazepoint" else "PL"
 
-        # --- NEW LOGIC ---
+        # FOLDER PATH CREATION
         parent_path = HelperClasses.get_local_results_path()
-        # Scan for existing folders inside the Experimental Results folder
         base_folder_name = get_subject_folder_name(parent_path, subject_name)
-        
         folder_name = f"{base_folder_name}_{device_suffix}"
-        # Set the local path inside the parent folder
         self.session_folder = os.path.join(parent_path, folder_name)
-        # -----------------
+        
+        # GOOGLE DRIVE INTEGRATION
         if HelperClasses.USE_DRIVE:
             try:
-                # Create the sub-folder on Drive inside the 'Experimental Results' folder
                 new_drive_id = create_drive_folder(folder_name, parent_id=HelperClasses.MAIN_DRIVE_FOLDER_ID)
                 HelperClasses.set_session_drive_folder(new_drive_id)
                 print("Drive folder created successfully!")
@@ -716,16 +695,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.initialize_application()
 
     def setup_anonymous_session(self, device_type):
-        # Create session folder
+        """Creates session folder and initializes application for an anonymous subject."""
         self.selected_device = device_type
         device_suffix = "GP3" if device_type == "gazepoint" else "PL"
 
-        # --- NEW LOGIC ---
+        # FOLDER PATH CREATION
         parent_path = HelperClasses.get_local_results_path()
         now_str = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
         folder_name = f"{now_str}_{device_suffix}"
         self.session_folder = os.path.join(parent_path, folder_name)
-        # -----------------
+        
+        # GOOGLE DRIVE INTEGRATION
         if HelperClasses.USE_DRIVE:
             try:
                 print(f"Creating Drive folder for {folder_name}...")
@@ -739,51 +719,50 @@ class MainWindow(QtWidgets.QMainWindow):
         self.initialize_application()
 
     def initialize_application(self):
-        # Folder creation
+        """Sets up all UI widgets, loggers, and hardware connections for the session."""
+        
+        # DIRECTORY CREATION
         if not os.path.exists(self.session_folder):
             os.makedirs(self.session_folder)
 
-        # Global logger
+        # GLOBAL LOGGER SETUP
         self.main_logger = SessionLogger(self.session_folder, "System")
         self.main_logger.log(f"Application Started. Folder: {self.session_folder}")
         self.main_logger.log(f"Device Selected: {self.selected_device}")
 
-        # Instantiate screens
+        # SCREEN RESOLUTION
         screen_rect = QtWidgets.QApplication.primaryScreen().size()
         width, height = screen_rect.width(), screen_rect.height()
 
+        # WIDGET INSTANTIATION
         self.menu_widget = MainMenuWidget(self.session_folder, self.params, self.selected_device)
-        #self.calibration_widget = CalibrationWidget()
         self.yn_widget = YNWidget()
         self.training_widget = TrainingWidget(device_type = self.selected_device)
         self.game_widget = GameWidget(width, height, self.session_folder)
         self.keyboard_widget = KeyboardApp()
         
-        # Add them to the stack
+        # WIDGET STACKING
         self.stack.addWidget(self.menu_widget)        # Index 1
         self.stack.addWidget(self.yn_widget)          # Index 2
         self.stack.addWidget(self.game_widget)        # Index 3
         self.stack.addWidget(self.training_widget)     # Index 4
         self.stack.addWidget(self.keyboard_widget)    # Index 5
-        #self.stack.addWidget(self.calibration_widget) # Index 6
+        # for any other application  (like Calibration) add here with progressive stacking index
 
-        # Navigation wiring
-        # Main menu wirings
+        # FORWARD NAVIGATION CONNECTIONS
         self.menu_widget.settings_btn.clicked.connect(self.open_settings_window)
-        #self.menu_widget.calibration_button.clicked.connect(self.open_calibration_widget)
         self.menu_widget.yn_button.clicked.connect(self.open_yn_widget)
         self.menu_widget.game_button.clicked.connect(self.open_game_widget)
         self.menu_widget.training_button.clicked.connect(self.open_training_widget)
         self.menu_widget.keyboard_button.clicked.connect(self.open_keyboard_widget)
         
-        # Back buttons wirings
-        #self.calibration_widget.back_btn.clicked.connect(self.go_home)
-        self.yn_widget.go_back_signal.connect(self.go_home)
+        # BACK NAVIGATION CONNECTIONS
+        self.yn_widget.go_back_signal.connect(self.go_home) # back to main menu method defined below
         self.game_widget.go_back_signal.connect(self.go_home)
         self.training_widget.go_back_signal.connect(self.go_home)
         self.keyboard_widget.go_back_signal.connect(self.go_home)
         
-        # Receiver setup
+        # HARDWARE RECEIVER SETUP
         if self.selected_device == "gazepoint":
             self.receiver = GazepointReceiver()
         else:
@@ -792,72 +771,77 @@ class MainWindow(QtWidgets.QMainWindow):
         self.receiver.connected_signal.connect(self.menu_widget.enable_menu)
         self.receiver.start()
 
+        # POLLING TIMER SETUP
         self.poll_timer = QtCore.QTimer()
         self.poll_timer.timeout.connect(self.poll_receiver)
         self.poll_timer.start(33)
 
-        # Manual check in case of lost connected signal
+        # MANUAL CONNECTION CHECK
         if hasattr(self.receiver, 'connected') and self.receiver.connected:
             print("Receiver already connected at application start")
             self.menu_widget.enable_menu()
 
-        # Switch to Main Menu
+        # SHOW MAIN MENU
         self.stack.setCurrentIndex(1)
 
     def poll_receiver(self):
-        """Pulls all pending frames from the active receiver and processes them"""
+        """Pulls pending frames from the active receiver queue and dispatches them to UI."""
         if hasattr(self, 'receiver') and self.receiver.connected:
             frames = self.receiver.get_all_frames()
             for area in frames:
                 self.dispatch_data(area)
 
     def open_calibration_widget(self):
+        """Transitions to the Calibration App. CURRENTLY NOT IN USE"""
         self.menu_widget.end_session()
-        self.main_logger.log("Opening Yes/No Widget")
+        self.main_logger.log("Opening Calibration Widget")
         self.stack.setCurrentIndex(6)
         self.calibration_widget.start_session(self.session_folder, self.params, self.selected_device)
         
     def open_yn_widget(self):
+        """Transitions to the Yes/No App."""
         self.menu_widget.end_session()
-        """Helper function to open widget and correctly initialise it"""
         self.main_logger.log("Opening Yes/No Widget")
         self.stack.setCurrentIndex(2)
         self.yn_widget.reset_to_initialization()
         self.yn_widget.start_session(self.session_folder, self.params, self.selected_device)
 
     def open_game_widget(self):
+        """Transitions to the Shuttle Game App."""
         self.menu_widget.end_session()
-        """Helper function to open widget and correctly initialise it"""
         self.main_logger.log("Opening Shuttle Game Widget") 
         self.stack.setCurrentIndex(3)
         self.game_widget.start_session(self.session_folder, self.params, self.selected_device)
 
     def open_training_widget(self):
+        """Transitions to the Training App."""
         self.menu_widget.end_session()
-        """Helper function to open widget and correctly initialise it"""
         self.main_logger.log("Opening training Widget")
         self.stack.setCurrentIndex(4)
         self.training_widget.start_session(self.session_folder, self.params, self.selected_device)
 
     def open_keyboard_widget(self):
+        """Transitions to the Keyboard App."""
         self.menu_widget.end_session()
-        self.main_logger.log("Opening training Widget")
+        self.main_logger.log("Opening keyboard Widget")
         self.stack.setCurrentIndex(5)
         self.keyboard_widget.start_session(self.session_folder, self.params, self.selected_device)
     
     def apply_new_threshold(self, new_thresh):
+        """Updates the constriction threshold across all active monitors."""
         print(f"MainWindow: Updating Constriction Monitor with threshold {new_thresh: .2f}")
-
         self.yn_widget.monitor.thresh = new_thresh
         self.menu_widget.monitor.thresh = new_thresh
 
     def end_session_and_go_home(self):
+        """Force stops the current app and returns to the Main Menu."""
         current = self.stack.currentWidget()
         if hasattr(current, 'end_session'):
             current.end_session()
-        self.go_home
+        self.go_home()
 
     def go_home(self):
+        """Resets the Main Menu state and returns to it."""
         self.main_logger.log("Returning to Main Menu")
 
         current_widget = self.stack.currentWidget()
@@ -873,46 +857,47 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack.setCurrentIndex(1)
 
     def dispatch_data(self, data_tuple):
-        # Unpack the tuple we just created in the receiver
+        """Routes unpacked eye tracking data to the currently active widget."""
+        
+        # UNPACK TUPLE OR HANDLE SINGLE VALUE
         if not isinstance(data_tuple, (tuple, list)):
             area = data_tuple
-            x, y = 0.0, 0.0
+            x, y = 0.0, 0.0 # gaze centre coordinates for LEFT EYE
         else:
             area, x, y = data_tuple
         
         current_widget = self.stack.currentWidget() 
         if hasattr(current_widget, 'update_data'):
-            # Pass coordinates to TrainingWidget
+            # TrainingWidget and MainMenuWidget require coordinates
             if isinstance(current_widget, TrainingWidget) or isinstance(current_widget, MainMenuWidget):
                 current_widget.update_data(area, raw_x=x, raw_y=y)
+            # Other widgets only require area
             else:
-                # Everything else only gets area
                 current_widget.update_data(area)
 
     def merge_session_csvs(self):
-        """Finds all Main Menu CSVs in the session folder and merges them into one timeline"""
+        """Merges fragmented Main Menu CSV logs into a single master timeline file."""
         if not hasattr(self, 'session_folder') or not os.path.exists(self.session_folder):
             return
 
-        # 1. Trova tutti i frammenti CSV del Main Menu (ignora maiuscole/minuscole)
+        # FIND MAIN MENU LOG FRAGMENTS
         csv_files = [f for f in os.listdir(self.session_folder) 
                      if f.endswith('.csv') and f.lower().startswith('mainmenu_') and not f.lower().startswith('master_')]
         
         if len(csv_files) <= 1:
-            # Se ci sono 0 o 1 file del menu, non c'è nulla da unire!
-            return
+            return # Nothing to merge
 
         print("Unione dei file CSV del Menù Principale in corso...")
         df_list = []
         
-        # 2. Leggi i file e preparali per l'unione
+        # READ AND PREPARE DATAFRAMES
         for file in csv_files:
             file_path = os.path.join(self.session_folder, file)
             try:
                 df = pd.read_csv(file_path)
-                df.columns = df.columns.str.strip() # Pulisce gli header
+                df.columns = df.columns.str.strip() # Clean headers
                 
-                # Aggiunge una colonna per capire da quale file provengono i dati
+                # Identify data source widget
                 widget_name = file.split('_')[0] if '_' in file else file.replace('.csv', '')
                 df['Widget_Source'] = widget_name
                 
@@ -920,15 +905,14 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception as e:
                 print(f"Errore nella lettura di {file}: {e}")
 
-        # 3. Unisci, ordina e salva
+        # MERGE, SORT AND SAVE
         if df_list:
             master_df = pd.concat(df_list, ignore_index=True)
             
-            # Ordina cronologicamente l'intera timeline
+            # Sort chronologically
             if 'Timestamp' in master_df.columns:
                 master_df = master_df.sort_values(by='Timestamp')
 
-            # Salva il file master finale
             master_path = os.path.join(self.session_folder, "Master_MainMenu_Log.csv")
             master_df.to_csv(master_path, index=False)
             
@@ -936,19 +920,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.main_logger.log(f"Master Main Menu CSV creato con successo: Master_MainMenu_Log.csv")
             print(f"Master CSV salvato in: {master_path}")
 
-            # 4. PULIZIA: Elimina i frammenti aspettando che il Drive Uploader finisca
+            # CLEANUP FRAGMENT FILES
             for file in csv_files:
                 file_path = os.path.join(self.session_folder, file)
                 deleted = False
                 attempts = 0
                 
-                # Prova a cancellare fino a 15 volte (0.2s di pausa = max 3 secondi)
+                # Retry loop for file deletion (handles WinError 32)
                 while not deleted and attempts < 15:
                     try:
                         os.remove(file_path)
                         deleted = True
                         print(f"Frammento {file} eliminato con successo.")
-                    except PermissionError: # Cattura l'errore WinError 32 (File in uso)
+                    except PermissionError:
                         time.sleep(0.2)
                         attempts += 1
                         
@@ -956,15 +940,20 @@ class MainWindow(QtWidgets.QMainWindow):
                     print(f"Impossibile eliminare {file}: il Drive Uploader ci sta mettendo troppo tempo.")
     
     def closeEvent(self, event):
+        """Handles application shutdown sequences, log finalisation and tracking software termination."""
+        
+        # CLOSE ACTIVE SESSIONS
         if hasattr(self, 'menu_widget') and hasattr(self.menu_widget, 'end_session'):
             self.menu_widget.end_session()
         
         time.sleep(0.2)
         self.merge_session_csvs()
         
+        # STOP HARDWARE RECEIVER
         if hasattr(self, 'receiver'):
             self.receiver.stop()
 
+        # TERMINATE EXTERNAL ACQUISITION SOFTWARE
         try:
             output = subprocess.check_output("tasklist", shell=True).decode()
             if "Gazepoint.exe" in output:
@@ -977,9 +966,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 time.sleep(2) 
 
                 if hasattr(self, "main_logger"):
-                    self.main_logger.log("Gazepoint closed automatically.")
+                    self.main_logger.log("Tracking software closed automatically.")
         except Exception as e:
-            print(f"Error closing Gazepoint: {e}")
+            print(f"Error closing tracking software: {e}")
             
         event.accept()
 
@@ -987,13 +976,16 @@ class MainWindow(QtWidgets.QMainWindow):
 # APPLICATION BUILDER
 # ---------------------------------------------------------
 if __name__ == "__main__":
-    # Ensure crisp rendering on TVs/High-DPI screens
+    
+    # HIGH DPI SCALING
     if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
         QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
     if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
         QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+        
     app = QtWidgets.QApplication(sys.argv)
 
+    # UI THEME CONFIGURATION
     UI_theme = """
             QWidget {
                 background-color: #2b2b2b;  /* Dark grey background */
@@ -1023,8 +1015,10 @@ if __name__ == "__main__":
                 background-color: #555555;
                 color: #888888;
             }"""
+            
     app.setStyleSheet(UI_theme)
 
+    # LAUNCH APP
     window = MainWindow()
     window.show()
 
