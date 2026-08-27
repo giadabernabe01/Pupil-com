@@ -1,7 +1,9 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 
+# ---------------------------------------------------------
+# STARTUP WIDGET
+# ---------------------------------------------------------
 class StartupWidget(QtWidgets.QWidget):
-    # UPDATE: Signals now send the device string as well!
     login_confirmed = QtCore.pyqtSignal(str, str) # (subject_name, device_type)
     skip_confirmed = QtCore.pyqtSignal(str)       # (device_type)
 
@@ -12,7 +14,7 @@ class StartupWidget(QtWidgets.QWidget):
         
         self.selected_device = None # Tracks the user's choice
 
-        # --- TITLE ---
+        # TITLE ---
         title = QtWidgets.QLabel("PUPIL-COM")
         title.setStyleSheet("font-size: 24px; font-weight: bold; margin-bottom: 20px;")
         self.layout.addWidget(title)
@@ -25,7 +27,7 @@ class StartupWidget(QtWidgets.QWidget):
         self.dev_layout = QtWidgets.QHBoxLayout()
         self.dev_layout.setSpacing(15)
         
-        # Device Buttons
+        # DEVICE BUTTONS
         self.btn_occhiale = QtWidgets.QPushButton("Occhiale (Pupil Core)")
         self.btn_occhiale.setCheckable(True)
         self.btn_occhiale.setFixedSize(200, 60)
@@ -34,7 +36,6 @@ class StartupWidget(QtWidgets.QWidget):
         self.btn_gp3.setCheckable(True)
         self.btn_gp3.setFixedSize(200, 60)
         
-        # Styles for the checkable buttons to make the selection obvious
         dev_btn_style = """
             QPushButton {
                 background-color: #444; color: #aaa; border: 2px solid #555;
@@ -46,13 +47,11 @@ class StartupWidget(QtWidgets.QWidget):
         self.btn_occhiale.setStyleSheet(dev_btn_style)
         self.btn_gp3.setStyleSheet(dev_btn_style)
         
-        # Group them so only one can be checked at a time
         self.dev_group = QtWidgets.QButtonGroup()
         self.dev_group.addButton(self.btn_occhiale)
         self.dev_group.addButton(self.btn_gp3)
         self.dev_group.setExclusive(True)
         
-        # Connect clicks to logic
         self.btn_occhiale.clicked.connect(lambda: self.set_device("pupil_core"))
         self.btn_gp3.clicked.connect(lambda: self.set_device("gazepoint"))
         
@@ -61,7 +60,7 @@ class StartupWidget(QtWidgets.QWidget):
         
         self.layout.addLayout(self.dev_layout)
         
-        # Hidden Error Label
+        # ERROR LABEL (Hidden by default)
         self.error_label = QtWidgets.QLabel("")
         self.error_label.setStyleSheet("color: #ff4444; font-size: 16px; font-weight: bold;")
         self.layout.addWidget(self.error_label, alignment=QtCore.Qt.AlignCenter)
@@ -91,23 +90,22 @@ class StartupWidget(QtWidgets.QWidget):
         self.skip_button = QtWidgets.QPushButton("Salta (Sessione anonima)")
         self.skip_button.setFixedWidth(400)
         self.skip_button.setStyleSheet("background-color: #444; color: #888; margin-top: 10px")
-        # Route skip through a validation function first
         self.skip_button.clicked.connect(self.on_skip) 
         self.layout.addWidget(self.skip_button, alignment=QtCore.Qt.AlignCenter)
 
         self.setLayout(self.layout)
 
     def set_device(self, device_name):
+        """Stores the selected device and clears any standing error messages."""
         self.selected_device = device_name
-        self.error_label.setText("") # Clear the error if they finally pick one!
+        self.error_label.setText("") 
 
     def on_confirm(self):
-        # 1. Check if device is selected
+        """Validates input before emitting the confirmation signal."""
         if not self.selected_device:
             self.error_label.setText("Errore: Seleziona un dispositivo per continuare!")
             return
             
-        # 2. Check if name is provided
         name = self.name_input.text().strip()
         if name:
             clean_name = name.replace(" ", "")
@@ -117,7 +115,7 @@ class StartupWidget(QtWidgets.QWidget):
             self.error_label.setText("Errore: Inserisci un nome o premi 'Salta'.")
 
     def on_skip(self):
-        # Check if device is selected before allowing skip
+        """Validates hardware selection before proceeding with an anonymous session."""
         if not self.selected_device:
             self.error_label.setText("Errore: Seleziona un dispositivo per continuare!")
             return
