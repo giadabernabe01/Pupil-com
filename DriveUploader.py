@@ -41,6 +41,7 @@ def create_drive_folder(folder_name, parent_id=None):
     return folder.get('id')
 
 class DriveUploaderThread(QThread):
+    """Thread to upload data in the Google Drive directory."""
     finished_signal = pyqtSignal(str, bool) 
     error_signal = pyqtSignal(str)
 
