@@ -106,7 +106,7 @@ class TrainingWidget(QtWidgets.QWidget):
         self.plotter = None
         self.trials = []
         self.current_trial_idx = 0
-        self.state = "INITIALIZATION"
+        self.state = "INITIALISATION"
         self.state_start_time = 0.0
         self.menu_scan_start_time = 0.0
 
@@ -154,7 +154,7 @@ class TrainingWidget(QtWidgets.QWidget):
 
         # Reset state but wait for user to click start button
         self.reset_logic()
-        self.state = "INITIALIZATION"
+        self.state = "INITIALISATION"
         self.state_start_time = time.time()
         self.message.setText("Premi 'Inizia' per cominciare")
     
@@ -202,6 +202,7 @@ class TrainingWidget(QtWidgets.QWidget):
         self.reset_logic()
 
     def reset_logic(self):
+        """Clears all the buffers, indexes and flags."""
         self.menu_scan_index = 0
         self.current_trial_idx = 0
         self.trials = [1,1,1,2,2]
@@ -226,7 +227,7 @@ class TrainingWidget(QtWidgets.QWidget):
         self.gaze_dev_start_time = 0.0
 
     def start_training_sequence(self):
-        """Triggered by the start button"""
+        """Triggered by the start button."""
         if self.logger is None and self.folder_path:
             self.logger = SessionLogger(self.folder_path, "training")
             self.logger.log("training Session Restarted")
@@ -252,7 +253,7 @@ class TrainingWidget(QtWidgets.QWidget):
         player.play()
 
     def show_timeout_dialog(self):
-        """Mette in pausa l'interfaccia e richiede l'intervento dell'utente."""
+        """Pauses the interface and requests the caregiver assistance."""
         
         # QMessageBox ferma automaticamente l'interazione con il resto della finestra
         msg = QMessageBox(self)
@@ -271,7 +272,7 @@ class TrainingWidget(QtWidgets.QWidget):
         self.state_start_time = time.time()
 
     def update_data(self, raw_area, raw_x=0, raw_y=0):
-        """Main Loop called by Main Window"""
+        """Core of the STATE MACHINE called by Main Window. Check the DOCUMENTATION for detailed state machine diagrams."""
         frame_instruction_code = 0
         area = self.filter.area_filtering(raw_area)
 
@@ -286,15 +287,15 @@ class TrainingWidget(QtWidgets.QWidget):
         status = self.monitor.constriction_detector(area)
     
         current_thresh = self.monitor.current_sma_thresh
-        exit_thresh = self.monitor.exit_thresh #if self.monitor.exit_thresh is not None else 0.0
+        exit_thresh = self.monitor.exit_thresh 
 
         # Updating plotter
         if self.plotter: self.plotter.add_data(val, current_thresh, exit_thresh)
 
         elapsed = time.time() - self.state_start_time
 
-        # --- STATE MACHINE ---
-        if self.state == "INITIALIZATION":
+        # STATE MACHINE
+        if self.state == "INITIALISATION":
             self.monitor.baseline_collection(area)
             elapsed_scan = time.time() - self.menu_scan_start_time
             if elapsed_scan >= 3:
@@ -353,7 +354,7 @@ class TrainingWidget(QtWidgets.QWidget):
             self.state_start_time = time.time()
             self.current_trial_success = False 
 
-        elif self.state == "HOLDING":
+        elif self.state == "HOLDING": 
             current_type = self.trials[self.current_trial_idx]
             duration = self.t_short_task if current_type == 1 else self.t_long_task
             frame_instruction_code = 1 if current_type == 1 else 2
@@ -396,12 +397,12 @@ class TrainingWidget(QtWidgets.QWidget):
                 else:
                     self.next_trial()
 
-        if self.state not in ["INITIALIZATION", "BASELINE", "FINISHED", "COMPLETED_IDLE"]:
+        if self.state not in ["INITIALISATION", "BASELINE", "FINISHED", "COMPLETED_IDLE"]:
             if raw_x != 0 and raw_y != 0:
                 current_dist = np.sqrt((raw_x - self.center_x)**2 + (raw_y - self.center_y)**2)
                 
                 if current_dist > self.gaze_tolerance:
-                    self.gaze_warning_label.setText("") #("⚠ SGUARDO FUORI CENTRO ⚠")
+                    self.gaze_warning_label.setText("") #("⚠ SGUARDO FUORI CENTRO ⚠") temporarily removed because it felt distracting to users
                     if not self.is_gaze_deviated:
                         self.is_gaze_deviated = True
                         self.gaze_dev_start_time = 0.0
@@ -449,8 +450,8 @@ class TrainingWidget(QtWidgets.QWidget):
             for btn in self.menu_buttons:
                 btn.setStyleSheet(self.inactive_btn_style)
             elapsed = time.time() - self.state_start_time
-            if elapsed >= 5:
-                self.state = "INITIALIZATION"
+            if elapsed >= 5: #ready for another Training round
+                self.state = "INITIALISATION"
                 self.state_start_time = time.time()
                 self.menu_scan_start_time = time.time()
 
