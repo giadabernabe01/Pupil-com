@@ -2,7 +2,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
 ![GUI](https://img.shields.io/badge/GUI-PyQt5-green.svg)
-![Domain](https://img.shields.io/badge/Domain-Biomedical%20Signal%20Processing-orange)
+![Domain](https://img.shields.io/badge/Domain-Brain%20Computer%20Interface-orange)
 
 >This project's aim is to provide a fully functional BCI that allows communication through the Pupillary Accomodation Reflex (PAR), an autonomic nervous system response voluntarily elicitable through a shift in gaze depth only.
 >Each time the user shifts focus from a far to a near target, the pupil reduces its size up to 50-70%: these voluntary constrictions are mapped by the interface as commands, and their duration determines the nature of the command.
