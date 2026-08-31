@@ -1,0 +1,46 @@
+name: Build and Release Pupil-com
+
+on:
+  push:
+    tags:
+      - 'v*' # The process starts only when a command with a "v" tag is launched
+jobs:
+  build:
+    runs-on: windows-latest # Uses a Windows server to create a Windows .exe
+
+    steps:
+    - name: Code checkout
+      uses: actions/checkout@v4
+
+    - name: Python Setup
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9' # Insert the Python version currently in use
+
+    - name: Dependencies Installation
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install -r requirements.txt
+
+    - name: Executable build with PyInstaller
+      run: >
+        pyinstaller --onefile --windowed --name "Pupil-com"
+        --exclude-module PySide6 
+        --exclude-module shiboken6 
+        --collect-data autocorrect 
+        --collect-data wordfreq 
+        --collect-data mediapipe 
+        --add-data "credentials.json;." 
+        --add-data "token.json;." 
+        --add-data "token.pickle;." 
+        --add-data "Images;Images" 
+        --add-data "Sounds;Sounds" 
+        main.py
+
+    - name: Executable build on the Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: dist/Pupil-com.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
