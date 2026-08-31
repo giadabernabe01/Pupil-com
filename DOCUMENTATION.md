@@ -23,35 +23,35 @@ This document provides a users manual for *Pupil-com* setup, from first installa
 ### Installation and updates
 _Pupil-com_ can be run either as a standalone application or directly from the source code.
 
--Standalone Application: Download the latest .exe release from the GitHub repository. No installation is required; simply double-click the executable to launch the application. Updates are managed by downloading the latest release.
+- Standalone Application: Download the latest .exe release from the GitHub repository. No installation is required; simply double-click the executable to launch the application. Updates are managed by downloading the latest release.
 
--Source Code: Ensure Python 3.8 (or above) is installed on your machine. Clone the repository and install all necessary dependencies by opening a terminal in the project directory and running pip install -r requirements.txt.
+- Source Code: Ensure Python 3.8 (or above) is installed on your machine. Clone the repository and install all necessary dependencies by opening a terminal in the project directory and running pip install -r requirements.txt.
 
 ### Hardware Setup
 The communication system design meets standard BCI requirements and integrates features specifically required for PAR performance and monitoring. The setup comprises the following elements:
 
-- Acquisition module: The eye-tracking device (wearable or remote), performing live pupillometry and providing real-time data.
+- ]Acquisition module*: The eye-tracking device (wearable or remote), performing live pupillometry and providing real-time data.
 
-- Computational unit: The PC, receiving a live data stream from the acquisition module and running the program for the graphical user interface (GUI).
+- *Computational unit*: The PC, receiving a live data stream from the acquisition module and running the program for the graphical user interface (GUI).
 
-- GUI display: A monitor, showing a scanning-mode interface that the subject interacts with, and working as the far target.
+- *GUI display*: A monitor, showing a scanning-mode interface that the subject interacts with, and working as the far target.
 
-- Audio output: External speakers to vocalise cues and selections within the GUI.
+- *Audio output*: External speakers to vocalise cues and selections within the GUI.
 
-- External input devices: Mouse and keyboard for the initialisation of the GUI and fine-tuning of parameters by the researcher or caregiver.
+- *External input devices*: Mouse and keyboard for the initialisation of the GUI and fine-tuning of parameters by the researcher or caregiver.
 
-- Universal laboratory stand: Holding the close target, a transparent plexiglass rectangle with a blue circular dot that the subject fixates their gaze on.
+- *Universal laboratory stand*: Holding the close target, a transparent plexiglass rectangle with a blue circular dot that the subject fixates their gaze on.
 
-- Seat: For the subject to comfortably sit and maintain stillness while shifting their depth of focus.
+- *Seat*: For the subject to comfortably sit and maintain stillness while shifting their depth of focus.
 
 <img width="2816" height="1536" alt="general_setup (figure2 1)" src="https://github.com/user-attachments/assets/458929bf-b1ce-45fa-8f00-e353ae901148" />
 
 
 _Pupil-com_ currently supports Pupil Core (wearable glasses) and Gazepoint GP3 (remote tripod-mounted tracker) as acquisition modules.
 
--Pupil Core: Place the headset on the user's face and connect the device to your PC via USB. Launch the native Pupil Capture software and ensure the eye camera is focused and properly detecting the pupil before opening Pupil-com.
+- Pupil Core: Place the headset on the user's face and connect the device to your PC via USB. Launch the native Pupil Capture software and ensure the eye camera is focused and properly detecting the pupil before enabling Pupil-com's Main Menu.
 
--Gazepoint GP3: Mount the tracker on its tripod and connect it via USB. Launch the Gazepoint Control software, perform the standard calibration procedure, and ensure the server is active before starting Pupil-com.
+- Gazepoint GP3: Mount the tracker on its tripod and connect it via USB. Launch the Gazepoint Control software, and ensure the server is active before enabling Pupil-com's Main Menu.
 
 ### Session Initialisation
 Run main.py script (or double click on the Pupil-com logo on the PC desktop):
@@ -132,7 +132,7 @@ Pupil-com is built on **PyQt5** and utilises a multi-threaded architecture to de
 Data is routed through:
 1. **Hardware Receivers** (`QThread` for Pupil Core / Gazepoint GP3)
 2. **Filters & Monitors** (`AreaFilter`, `ConstrictionMonitor`)
-3. **Application State Machines** (The active PyQt Widget)
+3. **Application State Machines** (The active PyQt Widgets)
 4. **Data Savers** (`SessionLogger`, `DataPlotter`, `DataSaver`, `DriveUploaderThread`)
 
 ---
