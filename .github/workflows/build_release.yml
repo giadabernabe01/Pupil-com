@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*' # The process starts only when a command with a "v" tag is launched
+
 jobs:
   build:
     runs-on: windows-latest # Uses a Windows server to create a Windows .exe
@@ -15,7 +16,7 @@ jobs:
     - name: Python Setup
       uses: actions/setup-python@v5
       with:
-        python-version: '3.9' # Insert the Python version currently in use
+        python-version: '3.10' # Aggiornato per risolvere l'errore di contourpy/comtypes
 
     - name: Dependencies Installation
       run: |
@@ -32,8 +33,6 @@ jobs:
         --collect-data wordfreq 
         --collect-data mediapipe 
         --add-data "credentials.json;." 
-        --add-data "token.json;." 
-        --add-data "token.pickle;." 
         --add-data "Images;Images" 
         --add-data "Sounds;Sounds" 
         main.py
