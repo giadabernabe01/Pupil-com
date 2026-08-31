@@ -1,6 +1,6 @@
 # _PUPIL-COM_: A BRAIN-COMPUTER INTERFACE FOR COMMUNICATION AND ENTERTAINMENT, EVEN IN A COMPLETELY LOCKED-IN STATE.
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![GUI](https://img.shields.io/badge/GUI-PyQt5-green.svg)
 ![Domain](https://img.shields.io/badge/Domain-Brain%20Computer%20Interface-orange)
 
