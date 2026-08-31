@@ -23,14 +23,17 @@ This document provides a users manual for *Pupil-com* setup, from first installa
 ### Installation and updates
 _Pupil-com_ can be run either as a standalone application or directly from the source code.
 
-- Standalone Application: Download the latest .exe release from the GitHub repository. No installation is required; simply double-click the executable to launch the application. Updates are managed by downloading the latest release.
-
+- Standalone Application:
+   1. Download the latest `.exe` release from the GitHub repository. No installation is required.
+   2. Place the executable in a dedicated folder on your PC. Make sure the `credentials.json` file provided by the developer is in the same folder.
+   3. **First-time setup:** On the very first launch, a browser window will pop up asking for Google Drive authorization. Log in with your Google account and grant permissions. A `token.json` file will be automatically generated in your folder to keep you logged in for future sessions.
+   4. Updates are managed by downloading the latest `.exe` release and replacing the old executable in the same folder. Your tokens and settings will remain intact.
 - Source Code: Ensure Python 3.8 (or above) is installed on your machine. Clone the repository and install all necessary dependencies by opening a terminal in the project directory and running pip install -r requirements.txt.
 
 ### Hardware Setup
 The communication system design meets standard BCI requirements and integrates features specifically required for PAR performance and monitoring. The setup comprises the following elements:
 
-- ]Acquisition module*: The eye-tracking device (wearable or remote), performing live pupillometry and providing real-time data.
+- *Acquisition module*: The eye-tracking device (wearable or remote), performing live pupillometry and providing real-time data.
 
 - *Computational unit*: The PC, receiving a live data stream from the acquisition module and running the program for the graphical user interface (GUI).
 
