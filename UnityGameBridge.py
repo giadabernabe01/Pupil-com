@@ -31,8 +31,8 @@ class UnityGameBridge:
 
         self.stop_unity()
         self._proc = subprocess.Popen([str(path)])
-        if self.startup_delay > 0:
-            time.sleep(self.startup_delay)
+        #if self.startup_delay > 0:
+         #   time.sleep(self.startup_delay)
         return self._proc
 
     def send_press(self, confidence=1.0, quality=1.0):
