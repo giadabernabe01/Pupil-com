@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 import socket
 import subprocess
@@ -19,18 +20,46 @@ class UnityGameBridge:
         self.startup_delay = float(startup_delay)
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._proc = None
+        self._exe_name = None
 
     def start_unity(self):
-        path = Path(self.exe_path)
+        path = Path(self.exe_path).expanduser()
         if not str(self.exe_path).strip():
             raise FileNotFoundError(
                 "unity_game.exe_path mancante in parameters.json"
             )
-        if not path.exists():
-            raise FileNotFoundError(f"Unity exe non trovata: {path}")
+
+        try:
+            path = path.resolve(strict=True)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Unity exe non trovata: {path}") from e
+
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"unity_game.exe_path non è un file .exe: {path}"
+            )
 
         self.stop_unity()
-        self._proc = subprocess.Popen([str(path)])
+        self._exe_name = path.name
+
+        # Launch elevated (UAC "run as administrator")
+        # ShellExecuteW "runas" — needed when normal Popen hits WinError 5
+        rc = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            str(path),
+            None,
+            str(path.parent),
+            1,  # SW_SHOWNORMAL
+        )
+        # Per MSDN: return value > 32 means success
+        if rc <= 32:
+            raise PermissionError(
+                f"Avvio come amministratore fallito (codice {rc}) per:\n{path}\n"
+                "Se hai annullato UAC, riprova e conferma Sì."
+            )
+
+        self._proc = True  # marker: launched (no Popen handle across UAC)
         if self.startup_delay > 0:
             time.sleep(self.startup_delay)
         return self._proc
@@ -49,17 +78,38 @@ class UnityGameBridge:
         self._sock.sendto(b'{"type":"release"}', (self.host, self.port))
 
     def is_running(self):
-        return self._proc is not None and self._proc.poll() is None
+        if not self._exe_name:
+            return False
+        try:
+            out = subprocess.check_output(
+                ["tasklist", "/FI", f"IMAGENAME eq {self._exe_name}"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW
+                if hasattr(subprocess, "CREATE_NO_WINDOW")
+                else 0,
+            )
+            return self._exe_name.lower() in out.lower()
+        except Exception:
+            return bool(self._proc)
 
     def stop_unity(self):
-        if self._proc is None:
-            return
-        if self._proc.poll() is None:
-            self._proc.terminate()
+        if self._exe_name:
             try:
-                self._proc.wait(timeout=5)
+                flags = (
+                    subprocess.CREATE_NO_WINDOW
+                    if hasattr(subprocess, "CREATE_NO_WINDOW")
+                    else 0
+                )
+                subprocess.run(
+                    ["taskkill", "/IM", self._exe_name, "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=flags,
+                    check=False,
+                )
             except Exception:
-                self._proc.kill()
+                pass
         self._proc = None
 
     def close(self):
