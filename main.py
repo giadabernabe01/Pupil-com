@@ -22,6 +22,7 @@ import HelperClasses
 from HelperClasses import SessionLogger, DataPlotter, DataSaver, TTSWorkerThread
 from Calibration import CalibrationWidget
 from ShuttleGame import GameWidget
+from UnityGameWidget import UnityGameWidget
 from YNWidget import YNWidget
 from Training import TrainingWidget
 from KeyboardApp import KeyboardApp
@@ -190,11 +191,12 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.yn_button = QtWidgets.QPushButton("SI O NO")
         self.keyboard_button = QtWidgets.QPushButton("TASTIERA")
         self.game_button = QtWidgets.QPushButton("GIOCO")
+        self.unity_game_button = QtWidgets.QPushButton("SPACE EVADERS")
         #self.calibration_button = QtWidgets.QPushButton("CALIBRAZIONE") #commented for now until an automated threshold calibration algorithm is developed
 
         size_policy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding) # for smooth resizing of the window
 
-        for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button]:
+        for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button, self.unity_game_button]:
         #for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button, self.calibration_button]:
             btn.setEnabled(False)
             btn.setSizePolicy(size_policy) # Apply the expanding policy
@@ -216,7 +218,8 @@ class MainMenuWidget(QtWidgets.QWidget):
         grid_layout.addWidget(self.keyboard_button, 1, 0)
         grid_layout.addWidget(self.game_button, 1, 1)
 
-        # Row 3 (Full Width)
+        # Row 3 — Unity Space Evaders (Shuttle GIOCO resta invariato)
+        grid_layout.addWidget(self.unity_game_button, 2, 0, 1, 2)
         #grid_layout.addWidget(self.calibration_button, 2, 0, 1, 2)
 
         # Add the grid to the main layout with a stretch factor equal to 1
@@ -255,7 +258,8 @@ class MainMenuWidget(QtWidgets.QWidget):
             self.training_button,
             self.yn_button, 
             self.keyboard_button, 
-            self.game_button  
+            self.game_button,
+            self.unity_game_button,
             #self.calibration_button
         ]
         self.current_index = 0
@@ -313,6 +317,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         #self.calibration_button.setEnabled(True)
         self.yn_button.setEnabled(True)
         self.game_button.setEnabled(True)
+        self.unity_game_button.setEnabled(True)
         self.training_button.setEnabled(True)
         self.keyboard_button.setEnabled(True)
 
@@ -323,6 +328,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.training_button.setEnabled(True)
         self.yn_button.setEnabled(True)
         self.game_button.setEnabled(True)
+        self.unity_game_button.setEnabled(True)
         #self.calibration_button.setEnabled(True)
         self.keyboard_button.setEnabled(True)
 
@@ -330,6 +336,7 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.training_button.setStyleSheet(self.inactive_style)
         self.yn_button.setStyleSheet(self.inactive_style)
         self.game_button.setStyleSheet(self.inactive_style)
+        self.unity_game_button.setStyleSheet(self.inactive_style)
         #self.calibration_button.setStyleSheet(self.inactive_style)
         self.keyboard_button.setStyleSheet(self.inactive_style)
 
@@ -740,6 +747,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.training_widget = TrainingWidget(device_type = self.selected_device)
         self.game_widget = GameWidget(width, height, self.session_folder)
         self.keyboard_widget = KeyboardApp()
+        self.unity_game_widget = UnityGameWidget(width, height, self.session_folder)
         
         # WIDGET STACKING
         self.stack.addWidget(self.menu_widget)        # Index 1
@@ -747,18 +755,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack.addWidget(self.game_widget)        # Index 3
         self.stack.addWidget(self.training_widget)     # Index 4
         self.stack.addWidget(self.keyboard_widget)    # Index 5
+        self.stack.addWidget(self.unity_game_widget)  # Index 6
         # for any other application  (like Calibration) add here with progressive stacking index
 
         # FORWARD NAVIGATION CONNECTIONS
         self.menu_widget.settings_btn.clicked.connect(self.open_settings_window)
         self.menu_widget.yn_button.clicked.connect(self.open_yn_widget)
         self.menu_widget.game_button.clicked.connect(self.open_game_widget)
+        self.menu_widget.unity_game_button.clicked.connect(self.open_unity_game_widget)
         self.menu_widget.training_button.clicked.connect(self.open_training_widget)
         self.menu_widget.keyboard_button.clicked.connect(self.open_keyboard_widget)
         
         # BACK NAVIGATION CONNECTIONS
         self.yn_widget.go_back_signal.connect(self.go_home) # back to main menu method defined below
         self.game_widget.go_back_signal.connect(self.go_home)
+        self.unity_game_widget.go_back_signal.connect(self.go_home)
         self.training_widget.go_back_signal.connect(self.go_home)
         self.keyboard_widget.go_back_signal.connect(self.go_home)
         
@@ -813,6 +824,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack.setCurrentIndex(3)
         self.game_widget.start_session(self.session_folder, self.params, self.selected_device)
 
+    def open_unity_game_widget(self):
+        """Transitions to Space Evaders (Unity) — Shuttle resta su open_game_widget."""
+        self.menu_widget.end_session()
+        self.main_logger.log("Opening Space Evaders (Unity) Widget")
+        self.stack.setCurrentIndex(6)
+        self.unity_game_widget.start_session(
+            self.session_folder, self.params, self.selected_device
+        )
+
     def open_training_widget(self):
         """Transitions to the Training App."""
         self.menu_widget.end_session()
@@ -832,6 +852,8 @@ class MainWindow(QtWidgets.QMainWindow):
         print(f"MainWindow: Updating Constriction Monitor with threshold {new_thresh: .2f}")
         self.yn_widget.monitor.thresh = new_thresh
         self.menu_widget.monitor.thresh = new_thresh
+        if hasattr(self, "unity_game_widget") and hasattr(self.unity_game_widget, "monitor"):
+            self.unity_game_widget.monitor.thresh = new_thresh
 
     def end_session_and_go_home(self):
         """Force stops the current app and returns to the Main Menu."""

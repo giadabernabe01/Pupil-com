@@ -35,6 +35,15 @@
         "cooldown_dur": 2.0,
         "initialization_dur": 3.0
     },
+    "unity_game": {
+        "exe_path": "D:/spaceevaders/Build/SpaceEvaders.exe",
+        "udp_host": "127.0.0.1",
+        "udp_port": 47890,
+        "startup_delay": 2.0,
+        "initialization_dur": 3.0,
+        "cooldown_dur": 2.0,
+        "scan_interval_dur": 3.5
+    },
     "calibration_widget": {
         "max_loops": 3,
         "initialization_dur": 2.0,
