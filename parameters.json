@@ -36,7 +36,7 @@
         "initialization_dur": 3.0
     },
     "unity_game": {
-        "exe_path": "C:/Users/Admin/Desktop/FRANCESCO ASTORE/spaceevaders_prova",
+        "exe_path": "C:/Users/Admin/Desktop/FRANCESCO ASTORE/spaceevaders_prova/Space Evaders.exe",
         "udp_host": "127.0.0.1",
         "udp_port": 47890,
         "startup_delay": 2.0,
