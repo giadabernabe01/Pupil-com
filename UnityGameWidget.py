@@ -1,14 +1,16 @@
 """Space Evaders launcher widget: PAR short -> UDP press into Unity.
 
-Includes live filtered-area / threshold feedback (does not change the detector).
+Live filtered-area monitor + Digital Eye (detector algorithm unchanged).
 """
 
 import time
+import winsound
 
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QApplication, QMessageBox, QWidget
 
 from DataProcessing import AreaFilter, ConstrictionMonitor
+from DigitalEye import DigitalEyeWidget
 from HelperClasses import SessionLogger, DataPlotter, DataSaver
 from UnityGameBridge import UnityGameBridge
 
@@ -16,7 +18,7 @@ from UnityGameBridge import UnityGameBridge
 class PupilLiveOverlay(QtWidgets.QWidget):
     """Always-on-top mini monitor so the signal stays visible over Unity."""
 
-    def __init__(self, parent=None):
+    def __init__(self, device_type="gazepoint", parent=None):
         super().__init__(
             parent,
             QtCore.Qt.Window
@@ -24,7 +26,7 @@ class PupilLiveOverlay(QtWidgets.QWidget):
             | QtCore.Qt.Tool,
         )
         self.setWindowTitle("PAR live — Space Evaders")
-        self.setFixedWidth(360)
+        self.setFixedWidth(380)
         self.setStyleSheet("background-color: #1e1e1e; color: #eee;")
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -36,11 +38,15 @@ class PupilLiveOverlay(QtWidgets.QWidget):
         layout.addWidget(title)
 
         tip = QtWidgets.QLabel(
-            "Lontano → area alta  ·  Vicino → area scende sotto soglia"
+            "Lontano → area alta  ·  Vicino → pupilla più piccola (sotto soglia)"
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("font-size: 12px; color: #aaa;")
         layout.addWidget(tip)
+
+        self.digital_eye = DigitalEyeWidget(device_type=device_type)
+        self.digital_eye.setMinimumSize(280, 160)
+        layout.addWidget(self.digital_eye, alignment=QtCore.Qt.AlignCenter)
 
         self.values_label = QtWidgets.QLabel("Area: —   Soglia: —")
         self.values_label.setStyleSheet("font-size: 14px;")
@@ -67,57 +73,60 @@ class PupilLiveOverlay(QtWidgets.QWidget):
 
         self.press_count = 0
 
+    def update_eye(self, x, y, area):
+        self.digital_eye.update_eye(x, y, area)
+
     def update_signal(self, filtered, thresh, under_thresh, status, last_udp_msg=None):
         f = float(filtered) if filtered is not None else 0.0
         t = float(thresh) if thresh is not None else 0.0
         self.values_label.setText(f"Area filt.: {f:.2f}   Soglia: {t:.2f}")
 
-        # Bar: how far above threshold (relaxed) vs below (constricting).
-        # 50% = exactly at threshold; >50% = above (far); <50% = below (near).
         if t > 1e-6:
             ratio = f / t
-            # map ratio 0.5..1.5 -> 0..1000, clamp
             bar_val = int(max(0.0, min(1.0, (ratio - 0.5))) * 1000)
         else:
             bar_val = 0
         self.bar.setValue(bar_val)
 
         if status == 1:
-            self.state_label.setText("Stato: PAR BREVE rilevato → inviato")
+            self.state_label.setText("Stato: PAR BREVE → inviato a Unity")
             self.state_label.setStyleSheet(
                 "font-size: 15px; font-weight: bold; color: #7CFC00;"
             )
-            self.bar.setStyleSheet(
-                "QProgressBar { background: #333; border: 1px solid #555; border-radius: 4px; }"
-                "QProgressBar::chunk { background: #7CFC00; border-radius: 3px; }"
-            )
+            chunk = "#7CFC00"
             self.press_count += 1
             self.udp_label.setText(
                 f"UDP press #{self.press_count}  ({time.strftime('%H:%M:%S')})"
             )
         elif status == 2:
-            self.state_label.setText("Stato: PAR LUNGO (tieni meno il vicino)")
+            self.state_label.setText("Stato: PAR LUNGO (rilascia prima il vicino)")
             self.state_label.setStyleSheet(
                 "font-size: 15px; font-weight: bold; color: #f39c12;"
             )
+            chunk = "#f39c12"
+        elif status == 3:
+            self.state_label.setText("Stato: PAR EXTRA-LUNGO")
+            self.state_label.setStyleSheet(
+                "font-size: 15px; font-weight: bold; color: #e67e22;"
+            )
+            chunk = "#e67e22"
         elif under_thresh:
             self.state_label.setText("Stato: sotto soglia (costrizione…)")
             self.state_label.setStyleSheet(
                 "font-size: 15px; font-weight: bold; color: #e74c3c;"
             )
-            self.bar.setStyleSheet(
-                "QProgressBar { background: #333; border: 1px solid #555; border-radius: 4px; }"
-                "QProgressBar::chunk { background: #e74c3c; border-radius: 3px; }"
-            )
+            chunk = "#e74c3c"
         else:
-            self.state_label.setText("Stato: sopra soglia (lontano / rilassato)")
+            self.state_label.setText("Stato: sopra soglia (lontano / ok)")
             self.state_label.setStyleSheet(
                 "font-size: 15px; font-weight: bold; color: #2ecc71;"
             )
-            self.bar.setStyleSheet(
-                "QProgressBar { background: #333; border: 1px solid #555; border-radius: 4px; }"
-                "QProgressBar::chunk { background: #2ecc71; border-radius: 3px; }"
-            )
+            chunk = "#2ecc71"
+
+        self.bar.setStyleSheet(
+            "QProgressBar { background: #333; border: 1px solid #555; border-radius: 4px; }"
+            f"QProgressBar::chunk {{ background: {chunk}; border-radius: 3px; }}"
+        )
 
         if last_udp_msg:
             self.udp_label.setText(last_udp_msg)
@@ -154,6 +163,7 @@ class UnityGameWidget(QWidget):
         self.device_type = "gazepoint"
         self.frame_event_code = 0
         self.live_overlay = None
+        self.digital_eye = None
         self._last_udp_msg = "UDP: —"
         self.t_cool = 2.0
         self.t_init = 3.0
@@ -229,10 +239,10 @@ class UnityGameWidget(QWidget):
             if widget is not None:
                 widget.setParent(None)
                 widget.deleteLater()
+        self.digital_eye = None
         QApplication.processEvents()
 
     def _make_inline_signal_box(self):
-        """Compact signal readout embedded in the main widget (menu + in-game)."""
         box = QtWidgets.QFrame()
         box.setStyleSheet(
             "QFrame { background-color: #2a2a2a; border: 1px solid #555; "
@@ -240,16 +250,23 @@ class UnityGameWidget(QWidget):
         )
         v = QtWidgets.QVBoxLayout(box)
 
-        self.signal_title = QtWidgets.QLabel("Monitor segnale (area filtrata)")
-        self.signal_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #7CFC00;")
+        self.signal_title = QtWidgets.QLabel("Monitor segnale + Digital Eye")
+        self.signal_title.setStyleSheet(
+            "font-size: 14px; font-weight: bold; color: #7CFC00;"
+        )
         v.addWidget(self.signal_title)
 
         self.signal_tip = QtWidgets.QLabel(
-            "Ricorda: lontano → vicino per costrizione. Barra verde = rilassato; rossa = sotto soglia."
+            "Lontano → vicino breve. Verde = ok · Rosso = sotto soglia · "
+            "Se resta arancione = PAR troppo lungo."
         )
         self.signal_tip.setWordWrap(True)
         self.signal_tip.setStyleSheet("font-size: 12px; color: #aaa;")
         v.addWidget(self.signal_tip)
+
+        self.digital_eye = DigitalEyeWidget(device_type=self.device_type)
+        self.digital_eye.setMinimumSize(260, 150)
+        v.addWidget(self.digital_eye, alignment=QtCore.Qt.AlignCenter)
 
         self.signal_values = QtWidgets.QLabel("Area filt.: —   Soglia: —   Raw: —")
         self.signal_values.setStyleSheet("font-size: 14px; color: #eee;")
@@ -271,11 +288,22 @@ class UnityGameWidget(QWidget):
         v.addWidget(self.signal_state)
         return box
 
-    def _update_signal_ui(self, raw_area, filtered, thresh, status):
-        under = thresh is not None and filtered is not None and thresh > 0 and filtered < thresh
+    def _update_signal_ui(self, raw_area, filtered, thresh, status, raw_x=0.0, raw_y=0.0):
+        under = (
+            thresh is not None
+            and filtered is not None
+            and thresh > 0
+            and filtered < thresh
+        )
         f = float(filtered) if filtered is not None else 0.0
         t = float(thresh) if thresh is not None else 0.0
         r = float(raw_area) if raw_area is not None else 0.0
+
+        if self.digital_eye is not None:
+            try:
+                self.digital_eye.update_eye(raw_x, raw_y, f)
+            except RuntimeError:
+                self.digital_eye = None
 
         if hasattr(self, "signal_values") and self.signal_values is not None:
             try:
@@ -291,38 +319,42 @@ class UnityGameWidget(QWidget):
 
                 if status == 1:
                     self.signal_state.setText("Stato: PAR BREVE → UDP inviato")
-                    self.signal_state.setStyleSheet(
-                        "font-size: 14px; font-weight: bold; color: #7CFC00;"
-                    )
+                    color = "#7CFC00"
                     chunk = "#7CFC00"
                 elif status == 2:
-                    self.signal_state.setText("Stato: PAR LUNGO (rilascia prima il vicino)")
-                    self.signal_state.setStyleSheet(
-                        "font-size: 14px; font-weight: bold; color: #f39c12;"
+                    self.signal_state.setText(
+                        "Stato: PAR LUNGO (torna lontano prima)"
                     )
+                    color = "#f39c12"
                     chunk = "#f39c12"
+                elif status == 3:
+                    self.signal_state.setText("Stato: PAR EXTRA-LUNGO")
+                    color = "#e67e22"
+                    chunk = "#e67e22"
                 elif under:
-                    self.signal_state.setText("Stato: sotto soglia (costrizione in corso)")
-                    self.signal_state.setStyleSheet(
-                        "font-size: 14px; font-weight: bold; color: #e74c3c;"
+                    self.signal_state.setText(
+                        "Stato: sotto soglia (costrizione in corso)"
                     )
+                    color = "#e74c3c"
                     chunk = "#e74c3c"
                 else:
                     self.signal_state.setText("Stato: sopra soglia (lontano / ok)")
-                    self.signal_state.setStyleSheet(
-                        "font-size: 14px; font-weight: bold; color: #2ecc71;"
-                    )
+                    color = "#2ecc71"
                     chunk = "#2ecc71"
 
+                self.signal_state.setStyleSheet(
+                    f"font-size: 14px; font-weight: bold; color: {color};"
+                )
                 self.signal_bar.setStyleSheet(
                     "QProgressBar { background: #333; border: 1px solid #555; border-radius: 4px; }"
                     f"QProgressBar::chunk {{ background: {chunk}; border-radius: 3px; }}"
                 )
             except RuntimeError:
-                pass  # widget deleted during clear_ui
+                pass
 
         if self.live_overlay is not None:
             try:
+                self.live_overlay.update_eye(raw_x, raw_y, f)
                 self.live_overlay.update_signal(
                     f, t, under, status, last_udp_msg=self._last_udp_msg
                 )
@@ -331,8 +363,7 @@ class UnityGameWidget(QWidget):
 
     def _open_live_overlay(self):
         self._close_live_overlay()
-        self.live_overlay = PupilLiveOverlay()
-        # Top-right of primary screen
+        self.live_overlay = PupilLiveOverlay(device_type=self.device_type)
         screen = QApplication.primaryScreen()
         if screen is not None:
             geo = screen.availableGeometry()
@@ -365,8 +396,7 @@ class UnityGameWidget(QWidget):
         welcome = QtWidgets.QLabel(
             "SPACE EVADERS (Unity)\n\n"
             "PAR breve = azione nel gioco\n"
-            "(scudo / salvataggio / colpo).\n\n"
-            "Comando: guarda LONTANO, poi VICINO (breve)."
+            "Comando: LONTANO, poi VICINO breve, poi di nuovo lontano."
         )
         welcome.setAlignment(QtCore.Qt.AlignCenter)
         self.main_layout.addWidget(welcome)
@@ -453,8 +483,8 @@ class UnityGameWidget(QWidget):
         self.clear_ui()
 
         self.info_label = QtWidgets.QLabel(
-            "Partita attiva — tieni d'occhio il monitor PAR\n"
-            "(finestra in alto a destra, sempre sopra Unity).\n\n"
+            "Partita attiva — monitor PAR in alto a destra\n"
+            "(Digital Eye + barra, sempre sopra Unity).\n\n"
             "Lontano → vicino breve = azione"
         )
         self.info_label.setAlignment(QtCore.Qt.AlignCenter)
@@ -482,9 +512,9 @@ class UnityGameWidget(QWidget):
         self._last_udp_msg = "UDP: in ascolto verso Unity…"
 
         if self.logger:
-            self.logger.log("Unity started; live PAR overlay open")
+            self.logger.log("Unity started; live PAR overlay + Digital Eye open")
 
-    def update_data(self, raw_area):
+    def update_data(self, raw_area, raw_x=0.0, raw_y=0.0):
         self.current_area = raw_area
         self.filtered_val = self.filter.area_filtering(raw_area)
 
@@ -496,8 +526,9 @@ class UnityGameWidget(QWidget):
         exit_thresh = self.monitor.exit_thresh
         status = self.monitor.constriction_detector(self.filtered_val)
 
-        # Live UI every frame (menu + game) — detector unchanged
-        self._update_signal_ui(raw_area, self.filtered_val, current_thresh, status)
+        self._update_signal_ui(
+            raw_area, self.filtered_val, current_thresh, status, raw_x, raw_y
+        )
 
         if self.plotter:
             self.plotter.add_data(self.filtered_val, current_thresh, exit_thresh)
@@ -533,6 +564,10 @@ class UnityGameWidget(QWidget):
                     self.plotter.mark_constriction("short")
                 if self.bridge:
                     self.bridge.send_press()
+                try:
+                    winsound.Beep(880, 80)
+                except Exception:
+                    pass
                 stamp = time.strftime("%H:%M:%S")
                 self._last_udp_msg = f"UDP press inviato @ {stamp}"
                 if self.logger:
@@ -542,6 +577,8 @@ class UnityGameWidget(QWidget):
                         self.status_label.setText(f"PAR inviato a Unity ({stamp})")
                     except RuntimeError:
                         pass
+            elif status == 2 and self.plotter:
+                self.plotter.mark_constriction("long")
             return
 
         if self.state == "INITIALIZATION":

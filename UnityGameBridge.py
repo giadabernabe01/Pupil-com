@@ -21,6 +21,8 @@ class UnityGameBridge:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._proc = None
         self._exe_name = None
+        self._running_cached = False
+        self._running_check_t = 0.0
 
     def start_unity(self):
         path = Path(self.exe_path).expanduser()
@@ -60,6 +62,8 @@ class UnityGameBridge:
             )
 
         self._proc = True  # marker: launched (no Popen handle across UAC)
+        self._running_cached = True
+        self._running_check_t = time.time()
         if self.startup_delay > 0:
             time.sleep(self.startup_delay)
         return self._proc
@@ -78,20 +82,30 @@ class UnityGameBridge:
         self._sock.sendto(b'{"type":"release"}', (self.host, self.port))
 
     def is_running(self):
+        """Cached process check — never call tasklist every pupil frame."""
         if not self._exe_name:
             return False
+        now = time.time()
+        # Refresh at most every 1.5s (tasklist is expensive and starved PAR detection)
+        if now - self._running_check_t < 1.5 and self._running_cached is not None:
+            return self._running_cached
+        self._running_check_t = now
         try:
+            flags = (
+                subprocess.CREATE_NO_WINDOW
+                if hasattr(subprocess, "CREATE_NO_WINDOW")
+                else 0
+            )
             out = subprocess.check_output(
                 ["tasklist", "/FI", f"IMAGENAME eq {self._exe_name}"],
                 text=True,
                 stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW
-                if hasattr(subprocess, "CREATE_NO_WINDOW")
-                else 0,
+                creationflags=flags,
             )
-            return self._exe_name.lower() in out.lower()
+            self._running_cached = self._exe_name.lower() in out.lower()
         except Exception:
-            return bool(self._proc)
+            self._running_cached = bool(self._proc)
+        return self._running_cached
 
     def stop_unity(self):
         if self._exe_name:
@@ -111,6 +125,8 @@ class UnityGameBridge:
             except Exception:
                 pass
         self._proc = None
+        self._running_cached = False
+        self._running_check_t = 0.0
 
     def close(self):
         self.stop_unity()

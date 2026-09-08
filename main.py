@@ -890,8 +890,11 @@ class MainWindow(QtWidgets.QMainWindow):
         
         current_widget = self.stack.currentWidget() 
         if hasattr(current_widget, 'update_data'):
-            # TrainingWidget and MainMenuWidget require coordinates
-            if isinstance(current_widget, TrainingWidget) or isinstance(current_widget, MainMenuWidget):
+            # Training, MainMenu and Unity Space Evaders need gaze for Digital Eye
+            if isinstance(
+                current_widget,
+                (TrainingWidget, MainMenuWidget, UnityGameWidget),
+            ):
                 current_widget.update_data(area, raw_x=x, raw_y=y)
             # Other widgets only require area
             else:
