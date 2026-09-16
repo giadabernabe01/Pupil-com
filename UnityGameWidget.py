@@ -16,7 +16,7 @@ from UnityGameBridge import UnityGameBridge
 
 
 class PupilLiveOverlay(QtWidgets.QWidget):
-    """Always-on-top mini monitor so the signal stays visible over Unity."""
+    """Always-on-top strip on the right: small Digital Eye above a vertical threshold bar."""
 
     def __init__(self, device_type="gazepoint", parent=None):
         super().__init__(
@@ -25,50 +25,69 @@ class PupilLiveOverlay(QtWidgets.QWidget):
             | QtCore.Qt.WindowStaysOnTopHint
             | QtCore.Qt.Tool,
         )
-        self.setWindowTitle("PAR live — Space Evaders")
-        self.setFixedWidth(380)
+        self.setWindowTitle("PAR")
+        self.setFixedWidth(120)
+        self.setMinimumHeight(420)
         self.setStyleSheet("background-color: #1e1e1e; color: #eee;")
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 10, 8, 10)
+        layout.setSpacing(6)
 
-        title = QtWidgets.QLabel("Segnale pupilla (filtrato)")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #7CFC00;")
+        title = QtWidgets.QLabel("PAR")
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        title.setStyleSheet("font-size: 13px; font-weight: bold; color: #7CFC00;")
         layout.addWidget(title)
 
-        tip = QtWidgets.QLabel(
-            "Lontano → area alta  ·  Vicino → pupilla più piccola (sotto soglia)"
-        )
-        tip.setWordWrap(True)
-        tip.setStyleSheet("font-size: 12px; color: #aaa;")
-        layout.addWidget(tip)
-
+        # Small eye on top of the vertical bar
         self.digital_eye = DigitalEyeWidget(device_type=device_type)
-        self.digital_eye.setMinimumSize(280, 160)
-        layout.addWidget(self.digital_eye, alignment=QtCore.Qt.AlignCenter)
+        self.digital_eye.setFixedSize(96, 72)
+        layout.addWidget(self.digital_eye, alignment=QtCore.Qt.AlignHCenter)
 
-        self.values_label = QtWidgets.QLabel("Area: —   Soglia: —")
-        self.values_label.setStyleSheet("font-size: 14px;")
+        self.values_label = QtWidgets.QLabel("—\n—")
+        self.values_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.values_label.setWordWrap(True)
+        self.values_label.setStyleSheet("font-size: 10px; color: #ccc;")
         layout.addWidget(self.values_label)
 
+        # Vertical threshold / area bar (fills upward when relaxed / above thresh)
+        bar_row = QtWidgets.QHBoxLayout()
+        bar_row.addStretch(1)
+
         self.bar = QtWidgets.QProgressBar()
+        self.bar.setOrientation(QtCore.Qt.Vertical)
         self.bar.setRange(0, 1000)
         self.bar.setValue(0)
         self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(22)
+        self.bar.setFixedWidth(28)
+        self.bar.setMinimumHeight(220)
         self.bar.setStyleSheet(
-            "QProgressBar { background: #333; border: 1px solid #555; border-radius: 4px; }"
-            "QProgressBar::chunk { background: #2ecc71; border-radius: 3px; }"
+            "QProgressBar {"
+            "  background: #333; border: 1px solid #555; border-radius: 6px;"
+            "}"
+            "QProgressBar::chunk {"
+            "  background: #2ecc71; border-radius: 5px;"
+            "}"
         )
-        layout.addWidget(self.bar)
+        bar_row.addWidget(self.bar)
+        bar_row.addStretch(1)
+        layout.addLayout(bar_row, stretch=1)
 
-        self.state_label = QtWidgets.QLabel("Stato: in attesa")
-        self.state_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #ccc;")
+        hint = QtWidgets.QLabel("↑ lontano\n↓ vicino")
+        hint.setAlignment(QtCore.Qt.AlignCenter)
+        hint.setStyleSheet("font-size: 10px; color: #888;")
+        layout.addWidget(hint)
+
+        self.state_label = QtWidgets.QLabel("ok")
+        self.state_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.state_label.setWordWrap(True)
+        self.state_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #ccc;")
         layout.addWidget(self.state_label)
 
-        self.udp_label = QtWidgets.QLabel("UDP: —")
-        self.udp_label.setStyleSheet("font-size: 13px; color: #88c;")
+        self.udp_label = QtWidgets.QLabel("UDP —")
+        self.udp_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.udp_label.setWordWrap(True)
+        self.udp_label.setStyleSheet("font-size: 10px; color: #88c;")
         layout.addWidget(self.udp_label)
 
         self.press_count = 0
@@ -79,7 +98,7 @@ class PupilLiveOverlay(QtWidgets.QWidget):
     def update_signal(self, filtered, thresh, under_thresh, status, last_udp_msg=None):
         f = float(filtered) if filtered is not None else 0.0
         t = float(thresh) if thresh is not None else 0.0
-        self.values_label.setText(f"Area filt.: {f:.2f}   Soglia: {t:.2f}")
+        self.values_label.setText(f"A {f:.0f}\nS {t:.0f}")
 
         if t > 1e-6:
             ratio = f / t
@@ -89,43 +108,45 @@ class PupilLiveOverlay(QtWidgets.QWidget):
         self.bar.setValue(bar_val)
 
         if status == 1:
-            self.state_label.setText("Stato: PAR BREVE → inviato a Unity")
+            self.state_label.setText("PAR → Unity")
             self.state_label.setStyleSheet(
-                "font-size: 15px; font-weight: bold; color: #7CFC00;"
+                "font-size: 11px; font-weight: bold; color: #7CFC00;"
             )
             chunk = "#7CFC00"
             self.press_count += 1
-            self.udp_label.setText(
-                f"UDP press #{self.press_count}  ({time.strftime('%H:%M:%S')})"
-            )
+            self.udp_label.setText(f"#{self.press_count} {time.strftime('%H:%M:%S')}")
         elif status == 2:
-            self.state_label.setText("Stato: PAR LUNGO (rilascia prima il vicino)")
+            self.state_label.setText("PAR lungo")
             self.state_label.setStyleSheet(
-                "font-size: 15px; font-weight: bold; color: #f39c12;"
+                "font-size: 11px; font-weight: bold; color: #f39c12;"
             )
             chunk = "#f39c12"
         elif status == 3:
-            self.state_label.setText("Stato: PAR EXTRA-LUNGO")
+            self.state_label.setText("extra-lungo")
             self.state_label.setStyleSheet(
-                "font-size: 15px; font-weight: bold; color: #e67e22;"
+                "font-size: 11px; font-weight: bold; color: #e67e22;"
             )
             chunk = "#e67e22"
         elif under_thresh:
-            self.state_label.setText("Stato: sotto soglia (costrizione…)")
+            self.state_label.setText("costrizione")
             self.state_label.setStyleSheet(
-                "font-size: 15px; font-weight: bold; color: #e74c3c;"
+                "font-size: 11px; font-weight: bold; color: #e74c3c;"
             )
             chunk = "#e74c3c"
         else:
-            self.state_label.setText("Stato: sopra soglia (lontano / ok)")
+            self.state_label.setText("lontano ok")
             self.state_label.setStyleSheet(
-                "font-size: 15px; font-weight: bold; color: #2ecc71;"
+                "font-size: 11px; font-weight: bold; color: #2ecc71;"
             )
             chunk = "#2ecc71"
 
         self.bar.setStyleSheet(
-            "QProgressBar { background: #333; border: 1px solid #555; border-radius: 4px; }"
-            f"QProgressBar::chunk {{ background: {chunk}; border-radius: 3px; }}"
+            "QProgressBar {"
+            "  background: #333; border: 1px solid #555; border-radius: 6px;"
+            "}"
+            "QProgressBar::chunk {"
+            f"  background: {chunk}; border-radius: 5px;"
+            "}"
         )
 
         if last_udp_msg:
@@ -367,9 +388,14 @@ class UnityGameWidget(QWidget):
         screen = QApplication.primaryScreen()
         if screen is not None:
             geo = screen.availableGeometry()
+            # Tall strip glued to the right edge during Unity play
+            strip_h = min(520, max(420, geo.height() - 80))
+            self.live_overlay.setFixedHeight(strip_h)
             self.live_overlay.adjustSize()
             w = self.live_overlay.width()
-            self.live_overlay.move(geo.right() - w - 24, geo.top() + 40)
+            x = geo.right() - w - 8
+            y = geo.top() + max(20, (geo.height() - strip_h) // 2)
+            self.live_overlay.move(x, y)
         self.live_overlay.show()
         self.live_overlay.raise_()
 
