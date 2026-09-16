@@ -4,7 +4,7 @@ from PyQt5 import QtCore, QtWidgets, QtGui
 class DigitalEyeWidget(QtWidgets.QWidget):
     def __init__(self, parent=None, device_type = "gazepoint"):
         super().__init__(parent)
-        self.setMinimumSize(300,200)
+        self.setMinimumSize(200, 120)
 
         self.target_x = 0.5 
         self.target_y = 0.5

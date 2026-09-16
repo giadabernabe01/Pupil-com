@@ -118,35 +118,32 @@ class MainMenuWidget(QtWidgets.QWidget):
         self.t_scan = gui_config.get("scan_interval_dur", 3.5)
         self.t_init = gui_config.get("initialization_dur", 3.0)
 
-        # MAIN LAYOUT
+        # MAIN LAYOUT — compact so all menu buttons fit on one screen
         self.main_layout = QtWidgets.QVBoxLayout()
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(15)
+        self.main_layout.setContentsMargins(16, 12, 16, 12)
+        self.main_layout.setSpacing(8)
 
         # HEADER
         header_layout = QtWidgets.QHBoxLayout()
-        
-        # Spacer to balance the layout
         left_dummy = QtWidgets.QWidget()
-        left_dummy.setFixedSize(60, 1) 
+        left_dummy.setFixedSize(48, 1)
 
-        # Centered Title
         self.label = QtWidgets.QLabel("MENÙ PRINCIPALE")
-        # Use a dynamic font size calculation later if needed, but 26px is a good safe base
-        self.label.setStyleSheet("font-size: 26px; font-weight: bold; color: white;")
+        self.label.setStyleSheet("font-size: 22px; font-weight: bold; color: white;")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         
-        # Settings Button (Top Right)
         self.settings_btn = QtWidgets.QPushButton("⋮")
-        self.settings_btn.setFixedSize(60, 50) # Touch friendly size
+        self.settings_btn.setFixedSize(48, 40)
         self.settings_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.settings_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent; 
                 color: #aaaaaa;
-                font-size: 45px;
+                font-size: 32px;
                 font-weight: bold;
                 border: none;
+                min-height: 0px;
+                padding: 0px;
             }
             QPushButton:hover { color: white; }
         """)
@@ -154,136 +151,146 @@ class MainMenuWidget(QtWidgets.QWidget):
         header_layout.addWidget(left_dummy)
         header_layout.addWidget(self.label)
         header_layout.addWidget(self.settings_btn)
-        
         self.main_layout.addLayout(header_layout)
 
-        # Add Eye Digital Twin to Main Menu
+        # Digital eye — capped height so it never pushes buttons off-screen
+        eye_row = QtWidgets.QHBoxLayout()
+        eye_row.addStretch(1)
         self.digital_eye = DigitalEyeWidget(device_type=self.device_type)
-        self.main_layout.addWidget(self.digital_eye, alignment=QtCore.Qt.AlignCenter)
+        self.digital_eye.setMinimumSize(160, 100)
+        self.digital_eye.setMaximumHeight(160)
+        self.digital_eye.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed
+        )
+        eye_row.addWidget(self.digital_eye)
+        eye_row.addStretch(1)
+        self.main_layout.addLayout(eye_row)
 
-        #Add red fixation dot to Main Menu
         self.fixation_dot = QtWidgets.QLabel()
-        self.fixation_dot.setFixedSize(16, 16)
-        self.fixation_dot.setStyleSheet("background-color: red; border-radius: 8px;")
+        self.fixation_dot.setFixedSize(12, 12)
+        self.fixation_dot.setStyleSheet("background-color: red; border-radius: 6px;")
         self.main_layout.addWidget(self.fixation_dot, alignment=QtCore.Qt.AlignCenter)
 
-        # STATUS LABELS for real time update in signal state and main menu state
+        # STATUS LABELS
         status_layout = QtWidgets.QHBoxLayout()
         self.live_label = QtWidgets.QLabel("Segnale: In attesa...")
-        self.live_label.setStyleSheet("font-size: 16px; color: #888888;")
+        self.live_label.setStyleSheet("font-size: 14px; color: #888888; font-weight: normal;")
         
         self.instruction_label = QtWidgets.QLabel("Inizializzazione...")
-        self.instruction_label.setStyleSheet("font-size: 18px; color: #FFD700; font-weight: bold;")
+        self.instruction_label.setStyleSheet(
+            "font-size: 15px; color: #FFD700; font-weight: bold;"
+        )
         self.instruction_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         
         status_layout.addWidget(self.live_label)
         status_layout.addStretch()
         status_layout.addWidget(self.instruction_label)
-        
         self.main_layout.addLayout(status_layout)
 
-        # RESPONSIVE BUTTON GRID
-        grid_layout = QtWidgets.QGridLayout()
-        grid_layout.setSpacing(15)
+        # BUTTON GRID — 3 rows, always visible; takes remaining vertical space
+        self.grid_layout = QtWidgets.QGridLayout()
+        self.grid_layout.setSpacing(12)
+        self.grid_layout.setContentsMargins(0, 4, 0, 4)
+        for r in range(3):
+            self.grid_layout.setRowStretch(r, 1)
+        self.grid_layout.setColumnStretch(0, 1)
+        self.grid_layout.setColumnStretch(1, 1)
 
-        # Initialize Buttons
         self.training_button = QtWidgets.QPushButton("TRAINING")
         self.yn_button = QtWidgets.QPushButton("SI O NO")
         self.keyboard_button = QtWidgets.QPushButton("TASTIERA")
         self.game_button = QtWidgets.QPushButton("GIOCO")
         self.unity_game_button = QtWidgets.QPushButton("SPACE EVADERS")
-        #self.calibration_button = QtWidgets.QPushButton("CALIBRAZIONE") #commented for now until an automated threshold calibration algorithm is developed
 
-        size_policy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding) # for smooth resizing of the window
-
-        for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button, self.unity_game_button]:
-        #for btn in [self.training_button, self.yn_button, self.keyboard_button, self.game_button, self.calibration_button]:
+        size_policy = QtWidgets.QSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
+        self.menu_buttons = [
+            self.training_button,
+            self.yn_button,
+            self.keyboard_button,
+            self.game_button,
+            self.unity_game_button,
+        ]
+        for btn in self.menu_buttons:
             btn.setEnabled(False)
-            btn.setSizePolicy(size_policy) # Apply the expanding policy
-            btn.setMinimumHeight(80)       # Never smaller than 80px (Good for Touch)
+            btn.setSizePolicy(size_policy)
+            btn.setMinimumHeight(56)
+            btn.setMaximumHeight(16777215)
             btn.setStyleSheet("""
                 QPushButton {
                     background-color: #444; 
                     color: #888; 
                     border-radius: 10px; 
                     font-weight: bold;
+                    min-height: 56px;
+                    padding: 8px;
                 }
             """)
 
-        # Row 1
-        grid_layout.addWidget(self.training_button, 0, 0)
-        grid_layout.addWidget(self.yn_button, 0, 1)
+        self.grid_layout.addWidget(self.training_button, 0, 0)
+        self.grid_layout.addWidget(self.yn_button, 0, 1)
+        self.grid_layout.addWidget(self.keyboard_button, 1, 0)
+        self.grid_layout.addWidget(self.game_button, 1, 1)
+        self.grid_layout.addWidget(self.unity_game_button, 2, 0, 1, 2)
 
-        # Row 2
-        grid_layout.addWidget(self.keyboard_button, 1, 0)
-        grid_layout.addWidget(self.game_button, 1, 1)
+        self.main_layout.addLayout(self.grid_layout, 1)
 
-        # Row 3 — Unity Space Evaders (Shuttle GIOCO resta invariato)
-        grid_layout.addWidget(self.unity_game_button, 2, 0, 1, 2)
-        #grid_layout.addWidget(self.calibration_button, 2, 0, 1, 2)
-
-        # Add the grid to the main layout with a stretch factor equal to 1
-        # (the buttons take as much space as possible)
-        self.main_layout.addLayout(grid_layout, 1) 
-
-        # SEPARATOR
         self.launch_divider = QtWidgets.QFrame()
         self.launch_divider.setFrameShape(QtWidgets.QFrame.HLine)
-        self.launch_divider.setStyleSheet("color: #444; margin: 10px 0;")
+        self.launch_divider.setStyleSheet("color: #444; margin: 4px 0;")
         self.main_layout.addWidget(self.launch_divider)
 
-        # FOOTER - buttons for starting up the acquisition via eye-tracker
         footer_layout = QtWidgets.QHBoxLayout()
-        footer_layout.setSpacing(15)
+        footer_layout.setSpacing(12)
 
         self.launch_button = QtWidgets.QPushButton("Avvia dispositivo")
-        self.launch_button.setMinimumHeight(60)
-        self.launch_button.setStyleSheet("background-color: #333; color: #aaa; border: 1px solid #555;")
+        self.launch_button.setMinimumHeight(48)
+        self.launch_button.setMaximumHeight(64)
+        self.launch_button.setStyleSheet(
+            "background-color: #333; color: #aaa; border: 1px solid #555; min-height: 48px;"
+        )
         self.launch_button.clicked.connect(self.launch_software)
         
         self.ready_btn = QtWidgets.QPushButton("Dispositivo pronto")
-        self.ready_btn.setMinimumHeight(60)
-        self.ready_btn.setStyleSheet("background-color: #28a745; color: white; font-weight: bold;")
+        self.ready_btn.setMinimumHeight(48)
+        self.ready_btn.setMaximumHeight(64)
+        self.ready_btn.setStyleSheet(
+            "background-color: #28a745; color: white; font-weight: bold; min-height: 48px;"
+        )
         self.ready_btn.clicked.connect(self.arm_system)
 
         footer_layout.addWidget(self.launch_button)
         footer_layout.addWidget(self.ready_btn)
-
         self.main_layout.addLayout(footer_layout)
         
         self.setLayout(self.main_layout)
 
-        # SCANNING STATE MACHINE SETUP
-        self.scan_options = [
-            self.training_button,
-            self.yn_button, 
-            self.keyboard_button, 
-            self.game_button,
-            self.unity_game_button,
-            #self.calibration_button
-        ]
+        self.scan_options = list(self.menu_buttons)
         self.current_index = 0
         self.scan_start_time = 0
-        self.state = "INITIALIZATION" # initial state that will be updated at timeout
+        self.state = "INITIALIZATION"
         self.state_start_time = time.time()
 
-        # Styles for buttons: active = highlighted and selectable with PAR, inactive = not highlighted, so not selectable with PAR
         self.active_style = """
             background-color: #0078d7; 
             color: white; 
             font-weight: bold;
             border: 3px solid white;
             border-radius: 10px;
+            min-height: 56px;
+            padding: 8px;
         """
         self.inactive_style = """
             background-color: #444; 
             color: #ccc;
             font-weight: bold;
             border-radius: 10px;
+            min-height: 56px;
+            padding: 8px;
         """
         
-        # Initial Check to disable start device button if it's already acquiring pupil data
-        self.check_pupil_process() 
+        self.check_pupil_process()
 
     def end_session(self):
         """Saves the continuous Main Menu CSV to disk"""
@@ -306,6 +313,8 @@ class MainMenuWidget(QtWidgets.QWidget):
         # hides setup buttons
         self.ready_btn.hide()
         self.launch_button.hide()
+        if hasattr(self, "launch_divider"):
+            self.launch_divider.hide()
 
         # resets ConstrictionMonitor to collect a fresh baseline
         self.monitor.reset_monitor()
@@ -523,14 +532,23 @@ class MainMenuWidget(QtWidgets.QWidget):
             self.logger.log(f"Error: {self.device_type} path not found")
 
     def resizeEvent(self, event):
-        """Dynamically scales the text and updates styles in visual scanner."""
+        """Keep menu usable fullscreen: scale eye + button fonts, never clip the grid."""
         super().resizeEvent(event)
-        
-        # Calculates font size as the widnow's height %
-        window_height = self.height()
-        button_font_size = max(14, int(window_height * 0.03))
-        
-        # Updates style templates with the new dynamic font size
+
+        h = max(1, self.height())
+        # Eye uses ~14% of window height, capped
+        eye_h = int(max(90, min(160, h * 0.14)))
+        eye_w = int(eye_h * 1.6)
+        if hasattr(self, "digital_eye") and self.digital_eye is not None:
+            self.digital_eye.setFixedSize(eye_w, eye_h)
+
+        button_font_size = max(15, min(28, int(h * 0.028)))
+        title_size = max(18, min(28, int(h * 0.032)))
+        if hasattr(self, "label"):
+            self.label.setStyleSheet(
+                f"font-size: {title_size}px; font-weight: bold; color: white;"
+            )
+
         self.active_style = f"""
             background-color: #0078d7; 
             color: white; 
@@ -538,6 +556,8 @@ class MainMenuWidget(QtWidgets.QWidget):
             font-weight: bold;
             border: 3px solid white;
             border-radius: 10px;
+            min-height: 56px;
+            padding: 8px;
         """
         self.inactive_style = f"""
             background-color: #444; 
@@ -545,12 +565,17 @@ class MainMenuWidget(QtWidgets.QWidget):
             font-size: {button_font_size}px;
             font-weight: bold;
             border-radius: 10px;
+            min-height: 56px;
+            padding: 8px;
         """
-        
-        # Re-applies styles to buttons for update, making sure the currently highlighted button is preserved.
-        if hasattr(self, 'scan_options'):
+
+        if hasattr(self, "scan_options"):
             for i, btn in enumerate(self.scan_options):
-                if hasattr(self, 'current_index') and i == self.current_index and self.system_armed:
+                if (
+                    hasattr(self, "current_index")
+                    and i == self.current_index
+                    and self.system_armed
+                ):
                     btn.setStyleSheet(self.active_style)
                 else:
                     btn.setStyleSheet(self.inactive_style)
@@ -565,7 +590,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # PARAMETER LOADING & UI SETUP
         self.params = load_parameters()
         self.setWindowTitle("Pupil-com")
-        self.resize(800, 600)
+        self.setMinimumSize(1024, 700)
+        # Fill the available desktop area (adapts to any monitor / resolution)
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is not None:
+            self.setGeometry(screen.availableGeometry())
         
         # ICON SETUP
         try:
@@ -583,6 +612,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack.addWidget(self.startup_widget) # index 0
         self.startup_widget.login_confirmed.connect(self.setup_subject_session)
         self.startup_widget.skip_confirmed.connect(self.setup_anonymous_session)
+
+    def keyPressEvent(self, event):
+        """F11 = true fullscreen toggle · Esc = exit fullscreen back to maximized."""
+        key = event.key()
+        if key == QtCore.Qt.Key_F11:
+            if self.isFullScreen():
+                self.showMaximized()
+            else:
+                self.showFullScreen()
+            event.accept()
+            return
+        if key == QtCore.Qt.Key_Escape and self.isFullScreen():
+            self.showMaximized()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def open_settings_window(self):
         """Pauses the UI, opens the Settings dialog, and handles parameter/hardware updates on save."""
@@ -1013,22 +1058,22 @@ if __name__ == "__main__":
     # UI THEME CONFIGURATION
     UI_theme = """
             QWidget {
-                background-color: #2b2b2b;  /* Dark grey background */
-                color: #ffffff;             /* White text */
+                background-color: #2b2b2b;
+                color: #ffffff;
                 font-family: 'Segoe UI', Arial;
             }
             QLabel {
-                font-size: 30px;
+                font-size: 16px;
                 font-weight: bold;
                 qproperty-alignment: 'AlignCenter';
             }
             QPushButton {
-                background-color: #0078d7;  /* Professional blue */
+                background-color: #0078d7;
                 border-radius: 8px;
                 border: 2px solid #005a9e;
                 color: white;
-                padding: 10px;
-                min-height: 40px;
+                padding: 8px;
+                min-height: 36px;
             }
             QPushButton:hover {
                 background-color: #1086e8;
@@ -1043,8 +1088,8 @@ if __name__ == "__main__":
             
     app.setStyleSheet(UI_theme)
 
-    # LAUNCH APP
+    # LAUNCH APP — maximized to fit the current screen
     window = MainWindow()
-    window.show()
+    window.showMaximized()
 
     sys.exit(app.exec_())
