@@ -90,7 +90,13 @@ class UnityGameBridge:
         self.send_command("resume")
 
     def send_exit(self):
-        self.send_command("exit")
+        """Ask Unity to quit (send a few times — UDP is best-effort)."""
+        for _ in range(3):
+            try:
+                self.send_command("exit")
+            except Exception:
+                break
+            time.sleep(0.05)
 
     def send_tracking_lost(self):
         self.send_command("tracking_lost")
@@ -98,13 +104,21 @@ class UnityGameBridge:
     def send_tracking_ok(self):
         self.send_command("tracking_ok")
 
+    def _force_check_running(self):
+        """Immediate process check (bypasses cache)."""
+        self._running_check_t = 0.0
+        self._running_cached = None
+        return self.is_running()
+
     def is_running(self):
         """Cached process check — never call tasklist every pupil frame."""
         if not self._exe_name:
             return False
         now = time.time()
-        # Refresh at most every 1.5s (tasklist is expensive and starved PAR detection)
-        if now - self._running_check_t < 1.5 and self._running_cached is not None:
+        if (
+            now - self._running_check_t < 1.5
+            and self._running_cached is not None
+        ):
             return self._running_cached
         self._running_check_t = now
         try:
@@ -124,23 +138,68 @@ class UnityGameBridge:
             self._running_cached = bool(self._proc)
         return self._running_cached
 
-    def stop_unity(self):
-        if self._exe_name:
+    def _kill_process(self, elevated=False):
+        if not self._exe_name:
+            return
+        if elevated:
+            # Unity was started with runas — normal taskkill often gets Access Denied
             try:
-                flags = (
-                    subprocess.CREATE_NO_WINDOW
-                    if hasattr(subprocess, "CREATE_NO_WINDOW")
-                    else 0
-                )
-                subprocess.run(
-                    ["taskkill", "/IM", self._exe_name, "/F"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=flags,
-                    check=False,
+                ctypes.windll.shell32.ShellExecuteW(
+                    None,
+                    "runas",
+                    "taskkill.exe",
+                    f"/F /IM {self._exe_name}",
+                    None,
+                    0,  # SW_HIDE
                 )
             except Exception:
                 pass
+            return
+
+        try:
+            flags = (
+                subprocess.CREATE_NO_WINDOW
+                if hasattr(subprocess, "CREATE_NO_WINDOW")
+                else 0
+            )
+            subprocess.run(
+                ["taskkill", "/IM", self._exe_name, "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=flags,
+                check=False,
+            )
+        except Exception:
+            pass
+
+    def stop_unity(self):
+        """Graceful UDP exit, then force-kill (elevated if needed)."""
+        if not self._exe_name:
+            self._proc = None
+            self._running_cached = False
+            return
+
+        # 1) Ask Unity to quit itself
+        try:
+            self.send_exit()
+        except Exception:
+            pass
+
+        # 2) Wait for clean shutdown
+        deadline = time.time() + 2.5
+        while time.time() < deadline:
+            if not self._force_check_running():
+                break
+            time.sleep(0.2)
+
+        # 3) Still alive → taskkill, then elevated taskkill
+        if self._force_check_running():
+            self._kill_process(elevated=False)
+            time.sleep(0.4)
+            if self._force_check_running():
+                self._kill_process(elevated=True)
+                time.sleep(0.8)
+
         self._proc = None
         self._running_cached = False
         self._running_check_t = 0.0

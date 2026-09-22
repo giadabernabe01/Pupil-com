@@ -678,9 +678,14 @@ class UnityGameWidget(QWidget):
     def _confirm_exit_choose(self):
         if self.exit_scan_index == 0:
             if self.logger:
-                self.logger.log("Exit confirmed via short PAR")
+                self.logger.log("Exit confirmed via short PAR — closing Unity")
+            # stop_unity: UDP exit + wait + force kill (elevated if needed)
             if self.bridge:
-                self.bridge.send_exit()
+                try:
+                    self.bridge.stop_unity()
+                except Exception as e:
+                    if self.logger:
+                        self.logger.log(f"stop_unity error: {e}")
             self._request_exit()
         else:
             if self.logger:
