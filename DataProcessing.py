@@ -15,7 +15,7 @@ from collections import deque
 # ---------------------------------------------------------
 class AreaFilter:
     """Class for filtering pupil area data."""
-    def __init__(self, fps=60, thresh=0.85, device_type="gazepoint"):
+    def __init__(self, fps=60, thresh=0.85, device_type="gazepoint", timeout_sec=5.0):
         
         if device_type == "gazepoint":
             self.amin, self.amax = 50.0, 1000.0 # area is measured in square pixels
@@ -29,6 +29,7 @@ class AreaFilter:
         self.area_not_valid = False
         self.area_not_valid_time = 0.0
         self.timeout_triggered = False
+        self.timeout_sec = float(timeout_sec)
 
         # FILTER INITIALISATIONS
         self.pupil_areas_raw = deque(maxlen=self.max_array_len)
@@ -56,7 +57,7 @@ class AreaFilter:
                 self.area_not_valid_time = time.time()
             else:
                 elapsed = time.time() - self.area_not_valid_time
-                if elapsed > 5 and not self.timeout_triggered:
+                if elapsed > self.timeout_sec and not self.timeout_triggered:
                     self.timeout_triggered = True
         else:
             return new_area # No valid data yet, temporarily fill with raw data

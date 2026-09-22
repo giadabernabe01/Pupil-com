@@ -69,17 +69,34 @@ class UnityGameBridge:
         return self._proc
 
     def send_press(self, confidence=1.0, quality=1.0):
-        payload = json.dumps(
-            {
-                "type": "press",
-                "confidence": float(confidence),
-                "quality": float(quality),
-            }
-        ).encode("utf-8")
-        self._sock.sendto(payload, (self.host, self.port))
+        self.send_command(
+            "press", confidence=float(confidence), quality=float(quality)
+        )
 
     def send_release(self):
-        self._sock.sendto(b'{"type":"release"}', (self.host, self.port))
+        self.send_command("release")
+
+    def send_command(self, cmd_type, **fields):
+        """Send a control/gameplay UDP message to Unity (press, pause, resume, exit, …)."""
+        payload = {"type": str(cmd_type)}
+        payload.update(fields)
+        data = json.dumps(payload).encode("utf-8")
+        self._sock.sendto(data, (self.host, self.port))
+
+    def send_pause(self):
+        self.send_command("pause")
+
+    def send_resume(self):
+        self.send_command("resume")
+
+    def send_exit(self):
+        self.send_command("exit")
+
+    def send_tracking_lost(self):
+        self.send_command("tracking_lost")
+
+    def send_tracking_ok(self):
+        self.send_command("tracking_ok")
 
     def is_running(self):
         """Cached process check — never call tasklist every pupil frame."""

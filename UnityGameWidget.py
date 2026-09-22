@@ -153,6 +153,152 @@ class PupilLiveOverlay(QtWidgets.QWidget):
             self.udp_label.setText(last_udp_msg)
 
 
+class ExitConfirmOverlay(QtWidgets.QWidget):
+    """Always-on-top exit scanner: ESCI / ANNULLA, 3s each, short PAR selects."""
+
+    def __init__(self, parent=None):
+        super().__init__(
+            parent,
+            QtCore.Qt.Window
+            | QtCore.Qt.WindowStaysOnTopHint
+            | QtCore.Qt.Tool,
+        )
+        self.setWindowTitle("Esci?")
+        self.setFixedSize(420, 280)
+        self.setStyleSheet("background-color: #1a1a1a; color: #eee;")
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        title = QtWidgets.QLabel("Uscire da Space Evaders?")
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        title.setStyleSheet("font-size: 22px; font-weight: bold; color: #FFD700;")
+        layout.addWidget(title)
+
+        tip = QtWidgets.QLabel(
+            "PAR breve = seleziona la voce evidenziata\n"
+            "(scansione automatica ogni 3 secondi)"
+        )
+        tip.setAlignment(QtCore.Qt.AlignCenter)
+        tip.setStyleSheet("font-size: 13px; color: #aaa;")
+        layout.addWidget(tip)
+
+        self.exit_btn = QtWidgets.QPushButton("ESCI")
+        self.cancel_btn = QtWidgets.QPushButton("ANNULLA")
+        layout.addWidget(self.exit_btn)
+        layout.addWidget(self.cancel_btn)
+
+        self.buttons = [self.exit_btn, self.cancel_btn]
+        self.scan_index = 0
+        self.active_style = (
+            "background-color: #0078d7; color: white; font-size: 22px; "
+            "font-weight: bold; border: 3px solid white; border-radius: 10px; padding: 14px;"
+        )
+        self.inactive_style = (
+            "background-color: #444; color: #ccc; font-size: 20px; "
+            "font-weight: bold; border-radius: 10px; padding: 14px;"
+        )
+        self._apply_scan_styles()
+
+    def _apply_scan_styles(self):
+        for i, btn in enumerate(self.buttons):
+            btn.setStyleSheet(
+                self.active_style if i == self.scan_index else self.inactive_style
+            )
+
+    def set_scan_index(self, index):
+        self.scan_index = int(index) % 2
+        self._apply_scan_styles()
+
+    def place_center(self):
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        geo = screen.availableGeometry()
+        self.move(
+            geo.center().x() - self.width() // 2,
+            geo.center().y() - self.height() // 2,
+        )
+
+
+class TrackingLostOverlay(QtWidgets.QWidget):
+    """Primary always-on-top panel when the eye is lost for too long."""
+
+    def __init__(self, device_type="gazepoint", parent=None):
+        super().__init__(
+            parent,
+            QtCore.Qt.Window
+            | QtCore.Qt.WindowStaysOnTopHint
+            | QtCore.Qt.Tool,
+        )
+        self.setWindowTitle("Occhio non rilevato")
+        self.setFixedSize(480, 420)
+        self.setStyleSheet("background-color: #201010; color: #eee;")
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+
+        title = QtWidgets.QLabel("OCCHIO NON RILEVATO")
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        title.setStyleSheet("font-size: 24px; font-weight: bold; color: #ff5555;")
+        layout.addWidget(title)
+
+        tip = QtWidgets.QLabel(
+            "Controlla inquadratura, luce e distanza.\n"
+            "Il gioco è in pausa.\n"
+            "Quando il segnale torna stabile, la partita riprende."
+        )
+        tip.setAlignment(QtCore.Qt.AlignCenter)
+        tip.setWordWrap(True)
+        tip.setStyleSheet("font-size: 14px; color: #ccc;")
+        layout.addWidget(tip)
+
+        self.digital_eye = DigitalEyeWidget(device_type=device_type)
+        self.digital_eye.setFixedSize(220, 140)
+        layout.addWidget(self.digital_eye, alignment=QtCore.Qt.AlignCenter)
+
+        self.values_label = QtWidgets.QLabel("Area: —")
+        self.values_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.values_label.setStyleSheet("font-size: 16px;")
+        layout.addWidget(self.values_label)
+
+        self.state_label = QtWidgets.QLabel("In attesa del segnale…")
+        self.state_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.state_label.setStyleSheet(
+            "font-size: 16px; font-weight: bold; color: #f39c12;"
+        )
+        layout.addWidget(self.state_label)
+
+        self.force_btn = QtWidgets.QPushButton("Riprova / reset filtro")
+        self.force_btn.setStyleSheet(
+            "background-color: #444; color: #eee; font-size: 16px; "
+            "padding: 10px; border-radius: 8px;"
+        )
+        layout.addWidget(self.force_btn)
+
+    def update_view(self, x, y, area, msg, ok=False):
+        self.digital_eye.update_eye(x, y, area if area else 0.0)
+        self.values_label.setText(f"Area: {area:.1f}" if area else "Area: —")
+        self.state_label.setText(msg)
+        self.state_label.setStyleSheet(
+            "font-size: 16px; font-weight: bold; color: #7CFC00;"
+            if ok
+            else "font-size: 16px; font-weight: bold; color: #f39c12;"
+        )
+
+    def place_center(self):
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        geo = screen.availableGeometry()
+        self.move(
+            geo.center().x() - self.width() // 2,
+            geo.center().y() - self.height() // 2,
+        )
+
+
 class UnityGameWidget(QWidget):
     go_back_signal = QtCore.pyqtSignal()
 
@@ -185,10 +331,20 @@ class UnityGameWidget(QWidget):
         self.frame_event_code = 0
         self.live_overlay = None
         self.digital_eye = None
+        self.exit_overlay = None
+        self.tracking_overlay = None
         self._last_udp_msg = "UDP: —"
         self.t_cool = 2.0
         self.t_init = 3.0
         self.menu_scan_interval = 3.5
+        self.exit_scan_interval = 3.0
+        self.tracking_lost_sec = 3.0
+        self.tracking_ok_sec = 1.0
+        self.play_mode = "MENU"  # MENU | PLAYING | CONFIRM_EXIT | TRACKING_LOST
+        self.exit_scan_index = 0
+        self.exit_scan_start_time = 0.0
+        self.tracking_ok_since = None
+        self._pre_tracking_mode = "PLAYING"
 
         self.reset_to_initialization()
 
@@ -213,11 +369,18 @@ class UnityGameWidget(QWidget):
             "initialization_dur", fallback.get("initialization_dur", 3.0)
         )
         self.menu_scan_interval = game_config.get("scan_interval_dur", 3.5)
+        self.exit_scan_interval = game_config.get("exit_scan_interval_dur", 3.0)
+        self.tracking_lost_sec = game_config.get("tracking_lost_sec", 3.0)
+        self.tracking_ok_sec = game_config.get("tracking_ok_sec", 1.0)
 
         active_fps = self.params.get("active_fps", 60)
         threshold = self.params["constriction"].get("threshold", 0.75)
 
-        self.filter = AreaFilter(fps=active_fps, device_type=self.device_type)
+        self.filter = AreaFilter(
+            fps=active_fps,
+            device_type=self.device_type,
+            timeout_sec=self.tracking_lost_sec,
+        )
         self.monitor = ConstrictionMonitor(
             fps=active_fps,
             thresh=threshold,
@@ -237,6 +400,9 @@ class UnityGameWidget(QWidget):
 
     def end_session(self):
         self.game_active = False
+        self.play_mode = "MENU"
+        self._close_exit_overlay()
+        self._close_tracking_overlay()
         self._close_live_overlay()
         if self.bridge:
             self.bridge.close()
@@ -411,7 +577,10 @@ class UnityGameWidget(QWidget):
     def reset_to_initialization(self):
         self.state = "RESETTING"
         self.game_active = False
+        self.play_mode = "MENU"
         self.frame_event_code = 0
+        self._close_exit_overlay()
+        self._close_tracking_overlay()
         self._close_live_overlay()
         self.monitor.reset_monitor()
         if hasattr(self.monitor, "baseline_buffer"):
@@ -466,7 +635,125 @@ class UnityGameWidget(QWidget):
         self.end_session()
         self.go_back_signal.emit()
 
+    def _close_exit_overlay(self):
+        if self.exit_overlay is not None:
+            try:
+                self.exit_overlay.close()
+                self.exit_overlay.deleteLater()
+            except RuntimeError:
+                pass
+            self.exit_overlay = None
+
+    def _close_tracking_overlay(self):
+        if self.tracking_overlay is not None:
+            try:
+                self.tracking_overlay.close()
+                self.tracking_overlay.deleteLater()
+            except RuntimeError:
+                pass
+            self.tracking_overlay = None
+
+    def _enter_confirm_exit(self):
+        if self.play_mode == "CONFIRM_EXIT":
+            return
+        self.play_mode = "CONFIRM_EXIT"
+        if self.bridge:
+            self.bridge.send_pause()
+        self._close_exit_overlay()
+        self.exit_overlay = ExitConfirmOverlay()
+        self.exit_overlay.place_center()
+        self.exit_scan_index = 0
+        self.exit_scan_start_time = time.time()
+        self.exit_overlay.set_scan_index(0)
+        self.exit_overlay.show()
+        self.exit_overlay.raise_()
+        if self.logger:
+            self.logger.log("CONFIRM_EXIT opened (long PAR)")
+        if hasattr(self, "status_label") and self.status_label:
+            try:
+                self.status_label.setText("Conferma uscita: scanner ESCI / ANNULLA")
+            except RuntimeError:
+                pass
+
+    def _confirm_exit_choose(self):
+        if self.exit_scan_index == 0:
+            if self.logger:
+                self.logger.log("Exit confirmed via short PAR")
+            if self.bridge:
+                self.bridge.send_exit()
+            self._request_exit()
+        else:
+            if self.logger:
+                self.logger.log("Exit cancelled via short PAR")
+            self._close_exit_overlay()
+            self.play_mode = "PLAYING"
+            if self.bridge:
+                self.bridge.send_resume()
+            if hasattr(self, "status_label") and self.status_label:
+                try:
+                    self.status_label.setText("Uscita annullata — partita ripresa")
+                except RuntimeError:
+                    pass
+
+    def _update_confirm_exit_scan(self):
+        if self.exit_overlay is None:
+            return
+        elapsed = time.time() - self.exit_scan_start_time
+        if elapsed >= self.exit_scan_interval:
+            self.exit_scan_start_time = time.time()
+            self.exit_scan_index = 1 - self.exit_scan_index
+            self.exit_overlay.set_scan_index(self.exit_scan_index)
+
+    def _enter_tracking_lost(self):
+        if self.play_mode == "TRACKING_LOST":
+            return
+        self._pre_tracking_mode = (
+            "CONFIRM_EXIT" if self.play_mode == "CONFIRM_EXIT" else "PLAYING"
+        )
+        # Close exit UI if open; tracking takes priority
+        self._close_exit_overlay()
+        self.play_mode = "TRACKING_LOST"
+        self.tracking_ok_since = None
+        if self.bridge:
+            self.bridge.send_tracking_lost()
+            self.bridge.send_pause()
+        self._close_tracking_overlay()
+        self.tracking_overlay = TrackingLostOverlay(device_type=self.device_type)
+        self.tracking_overlay.force_btn.clicked.connect(self._reset_tracking_filters)
+        self.tracking_overlay.place_center()
+        self.tracking_overlay.show()
+        self.tracking_overlay.raise_()
+        if self.logger:
+            self.logger.log("TRACKING_LOST overlay opened")
+
+    def _reset_tracking_filters(self):
+        self.filter.reset()
+        self.monitor.reset_monitor()
+        self.tracking_ok_since = None
+        if self.tracking_overlay:
+            self.tracking_overlay.update_view(
+                0, 0, 0, "Filtro resettato — cerca di nuovo l'occhio…", ok=False
+            )
+
+    def _leave_tracking_lost(self):
+        self._close_tracking_overlay()
+        self.filter.timeout_triggered = False
+        if self.logger:
+            self.logger.log("Tracking recovered")
+        if self.bridge:
+            self.bridge.send_tracking_ok()
+        # Resume play unless we need to reopen exit confirm (unlikely mid-lost)
+        self.play_mode = "PLAYING"
+        if self.bridge:
+            self.bridge.send_resume()
+        if hasattr(self, "status_label") and self.status_label:
+            try:
+                self.status_label.setText("Segnale recuperato — partita ripresa")
+            except RuntimeError:
+                pass
+
     def show_timeout_dialog(self):
+        """Menu / non-game fallback (blocking). In-game uses TRACKING_LOST overlay."""
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Warning)
         msg.setWindowTitle("Errore di Rilevamento")
@@ -536,6 +823,11 @@ class UnityGameWidget(QWidget):
 
         self._open_live_overlay()
         self._last_udp_msg = "UDP: in ascolto verso Unity…"
+        self.play_mode = "PLAYING"
+        self.info_label.setText(
+            self.info_label.text()
+            + "\n\nPAR lungo = menù Esci / Annulla"
+        )
 
         if self.logger:
             self.logger.log("Unity started; live PAR overlay + Digital Eye open")
@@ -544,13 +836,20 @@ class UnityGameWidget(QWidget):
         self.current_area = raw_area
         self.filtered_val = self.filter.area_filtering(raw_area)
 
-        if self.filter.timeout_triggered:
+        # In-game: primary tracking-lost overlay (no weak MessageBox behind Unity)
+        if self.game_active and self.filter.timeout_triggered:
+            if self.play_mode != "TRACKING_LOST":
+                self._enter_tracking_lost()
+        elif self.filter.timeout_triggered and not self.game_active:
             self.show_timeout_dialog()
             return
 
         current_thresh = self.monitor.current_sma_thresh
         exit_thresh = self.monitor.exit_thresh
-        status = self.monitor.constriction_detector(self.filtered_val)
+        status = 0
+        # While tracking is lost, skip constriction (avoid phantom PAR)
+        if self.play_mode != "TRACKING_LOST":
+            status = self.monitor.constriction_detector(self.filtered_val)
 
         self._update_signal_ui(
             raw_area, self.filtered_val, current_thresh, status, raw_x, raw_y
@@ -584,6 +883,56 @@ class UnityGameWidget(QWidget):
                 self.go_back_signal.emit()
                 return
 
+            # --- TRACKING LOST ---
+            if self.play_mode == "TRACKING_LOST":
+                signal_ok = (
+                    raw_area is not None
+                    and self.filter.amin <= raw_area <= self.filter.amax
+                    and not self.filter.area_not_valid
+                )
+                if self.tracking_overlay:
+                    if signal_ok:
+                        if self.tracking_ok_since is None:
+                            self.tracking_ok_since = time.time()
+                        held = time.time() - self.tracking_ok_since
+                        remain = max(0.0, self.tracking_ok_sec - held)
+                        self.tracking_overlay.update_view(
+                            raw_x,
+                            raw_y,
+                            self.filtered_val or 0.0,
+                            f"Segnale ok — ripresa tra {remain:.1f}s",
+                            ok=True,
+                        )
+                        if held >= self.tracking_ok_sec:
+                            self._leave_tracking_lost()
+                    else:
+                        self.tracking_ok_since = None
+                        self.tracking_overlay.update_view(
+                            raw_x,
+                            raw_y,
+                            self.filtered_val or 0.0,
+                            "In attesa del segnale…",
+                            ok=False,
+                        )
+                return
+
+            # --- CONFIRM EXIT SCANNER ---
+            if self.play_mode == "CONFIRM_EXIT":
+                self._update_confirm_exit_scan()
+                if status == 1:
+                    self.frame_event_code = "EXIT_SELECT"
+                    if self.plotter:
+                        self.plotter.mark_constriction("short")
+                    try:
+                        winsound.Beep(660, 80)
+                    except Exception:
+                        pass
+                    self._confirm_exit_choose()
+                elif status == 2 and self.plotter:
+                    self.plotter.mark_constriction("long")
+                return
+
+            # --- PLAYING ---
             if status == 1:
                 self.frame_event_code = "UNITY_PRESS"
                 if self.plotter:
@@ -603,8 +952,10 @@ class UnityGameWidget(QWidget):
                         self.status_label.setText(f"PAR inviato a Unity ({stamp})")
                     except RuntimeError:
                         pass
-            elif status == 2 and self.plotter:
-                self.plotter.mark_constriction("long")
+            elif status == 2:
+                if self.plotter:
+                    self.plotter.mark_constriction("long")
+                self._enter_confirm_exit()
             return
 
         if self.state == "INITIALIZATION":
