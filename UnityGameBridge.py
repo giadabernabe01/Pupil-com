@@ -23,6 +23,7 @@ class UnityGameBridge:
         self._exe_name = None
         self._running_cached = False
         self._running_check_t = 0.0
+        self._closing = False
 
     def start_unity(self):
         path = Path(self.exe_path).expanduser()
@@ -43,6 +44,7 @@ class UnityGameBridge:
 
         self.stop_unity()
         self._exe_name = path.name
+        self._closing = False
 
         # Launch elevated (UAC "run as administrator")
         # ShellExecuteW "runas" — needed when normal Popen hits WinError 5
@@ -78,24 +80,31 @@ class UnityGameBridge:
 
     def send_command(self, cmd_type, **fields):
         """Send a control/gameplay UDP message to Unity (press, pause, resume, exit, …)."""
+        if self._sock is None:
+            return
         payload = {"type": str(cmd_type)}
         payload.update(fields)
         data = json.dumps(payload).encode("utf-8")
-        self._sock.sendto(data, (self.host, self.port))
+        try:
+            self._sock.sendto(data, (self.host, self.port))
+        except Exception:
+            pass
 
     def send_pause(self):
-        self.send_command("pause")
+        """Spam pause a few times — UDP is unreliable and builds may drop one packet."""
+        for _ in range(5):
+            self.send_command("pause")
+            time.sleep(0.04)
 
     def send_resume(self):
-        self.send_command("resume")
+        for _ in range(3):
+            self.send_command("resume")
+            time.sleep(0.04)
 
     def send_exit(self):
         """Ask Unity to quit (send a few times — UDP is best-effort)."""
-        for _ in range(3):
-            try:
-                self.send_command("exit")
-            except Exception:
-                break
+        for _ in range(5):
+            self.send_command("exit")
             time.sleep(0.05)
 
     def send_tracking_lost(self):
@@ -104,8 +113,49 @@ class UnityGameBridge:
     def send_tracking_ok(self):
         self.send_command("tracking_ok")
 
+    def _creation_flags(self):
+        return (
+            subprocess.CREATE_NO_WINDOW
+            if hasattr(subprocess, "CREATE_NO_WINDOW")
+            else 0
+        )
+
+    def _list_pids(self):
+        """PIDs for the Unity exe (handles names with spaces)."""
+        if not self._exe_name:
+            return []
+        try:
+            # /FI value must be one argv so spaces in the exe name stay intact
+            out = subprocess.check_output(
+                [
+                    "tasklist",
+                    "/FI",
+                    f"IMAGENAME eq {self._exe_name}",
+                    "/FO",
+                    "CSV",
+                    "/NH",
+                ],
+                text=True,
+                stderr=subprocess.DEVNULL,
+                creationflags=self._creation_flags(),
+            )
+        except Exception:
+            return []
+
+        import csv
+        import io
+
+        pids = []
+        target = self._exe_name.lower()
+        for row in csv.reader(io.StringIO(out)):
+            if len(row) >= 2 and row[0].lower() == target:
+                try:
+                    pids.append(int(row[1]))
+                except ValueError:
+                    continue
+        return pids
+
     def _force_check_running(self):
-        """Immediate process check (bypasses cache)."""
         self._running_check_t = 0.0
         self._running_cached = None
         return self.is_running()
@@ -121,92 +171,116 @@ class UnityGameBridge:
         ):
             return self._running_cached
         self._running_check_t = now
-        try:
-            flags = (
-                subprocess.CREATE_NO_WINDOW
-                if hasattr(subprocess, "CREATE_NO_WINDOW")
-                else 0
-            )
-            out = subprocess.check_output(
-                ["tasklist", "/FI", f"IMAGENAME eq {self._exe_name}"],
-                text=True,
-                stderr=subprocess.DEVNULL,
-                creationflags=flags,
-            )
-            self._running_cached = self._exe_name.lower() in out.lower()
-        except Exception:
-            self._running_cached = bool(self._proc)
+        pids = self._list_pids()
+        self._running_cached = len(pids) > 0
+        if not self._running_cached:
+            self._proc = None
         return self._running_cached
 
-    def _kill_process(self, elevated=False):
+    def _kill_all(self, elevated=False):
+        """Force-kill every matching process. Elevated path uses ONE UAC prompt."""
         if not self._exe_name:
             return
-        if elevated:
-            # Unity was started with runas — normal taskkill often gets Access Denied
+
+        pids = self._list_pids()
+        if not elevated:
+            for pid in pids:
+                try:
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(pid)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=self._creation_flags(),
+                        check=False,
+                    )
+                except Exception:
+                    pass
             try:
-                ctypes.windll.shell32.ShellExecuteW(
-                    None,
-                    "runas",
-                    "taskkill.exe",
-                    f"/F /IM {self._exe_name}",
-                    None,
-                    0,  # SW_HIDE
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/IM", self._exe_name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=self._creation_flags(),
+                    check=False,
                 )
             except Exception:
                 pass
             return
 
+        # ONE elevated taskkill — quotes required for "Space Evaders.exe"
         try:
-            flags = (
-                subprocess.CREATE_NO_WINDOW
-                if hasattr(subprocess, "CREATE_NO_WINDOW")
-                else 0
-            )
-            subprocess.run(
-                ["taskkill", "/IM", self._exe_name, "/F"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=flags,
-                check=False,
+            ctypes.windll.shell32.ShellExecuteW(
+                None,
+                "runas",
+                "taskkill.exe",
+                f'/F /T /IM "{self._exe_name}"',
+                None,
+                0,
             )
         except Exception:
             pass
 
     def stop_unity(self):
-        """Graceful UDP exit, then force-kill (elevated if needed)."""
-        if not self._exe_name:
+        """Graceful UDP exit, then force-kill (single elevated attempt if needed)."""
+        if self._closing:
+            return
+        self._closing = True
+
+        try:
+            if not self._exe_name:
+                self._proc = None
+                self._running_cached = False
+                return
+
+            # Already dead?
+            if not self._force_check_running():
+                self._proc = None
+                self._running_cached = False
+                return
+
+            # 1) Ask Unity to quit itself
+            try:
+                self.send_exit()
+            except Exception:
+                pass
+
+            deadline = time.time() + 2.0
+            while time.time() < deadline:
+                if not self._force_check_running():
+                    break
+                time.sleep(0.15)
+
+            # 2) Normal kill (no UAC)
+            if self._force_check_running():
+                self._kill_all(elevated=False)
+                time.sleep(0.5)
+
+            # 3) ONE elevated kill (UAC once) — required when Unity was started with runas
+            if self._force_check_running():
+                self._kill_all(elevated=True)
+                # Wait for elevated kill to take effect
+                deadline = time.time() + 3.0
+                while time.time() < deadline:
+                    if not self._force_check_running():
+                        break
+                    time.sleep(0.25)
+
             self._proc = None
             self._running_cached = False
-            return
-
-        # 1) Ask Unity to quit itself
-        try:
-            self.send_exit()
-        except Exception:
-            pass
-
-        # 2) Wait for clean shutdown
-        deadline = time.time() + 2.5
-        while time.time() < deadline:
-            if not self._force_check_running():
-                break
-            time.sleep(0.2)
-
-        # 3) Still alive → taskkill, then elevated taskkill
-        if self._force_check_running():
-            self._kill_process(elevated=False)
-            time.sleep(0.4)
-            if self._force_check_running():
-                self._kill_process(elevated=True)
-                time.sleep(0.8)
-
-        self._proc = None
-        self._running_cached = False
-        self._running_check_t = 0.0
+            self._running_check_t = 0.0
+        finally:
+            self._closing = False
 
     def close(self):
-        self.stop_unity()
+        """Stop Unity (if needed) and close the UDP socket. Idempotent."""
         try:
-            self._sock.close()
+            self.stop_unity()
         except Exception:
             pass
+        sock = self._sock
+        self._sock = None
+        if sock is not None:
+            try:
+                sock.close()
+            except Exception:
+                pass

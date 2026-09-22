@@ -657,8 +657,12 @@ class UnityGameWidget(QWidget):
         if self.play_mode == "CONFIRM_EXIT":
             return
         self.play_mode = "CONFIRM_EXIT"
+        # Pause Unity immediately (UDP spam — must be in updated PupilUdpBridge build)
         if self.bridge:
-            self.bridge.send_pause()
+            try:
+                self.bridge.send_pause()
+            except Exception:
+                pass
         self._close_exit_overlay()
         self.exit_overlay = ExitConfirmOverlay()
         self.exit_overlay.place_center()
@@ -667,25 +671,38 @@ class UnityGameWidget(QWidget):
         self.exit_overlay.set_scan_index(0)
         self.exit_overlay.show()
         self.exit_overlay.raise_()
+        # Re-send pause after overlay is up (in case first packets were lost)
+        if self.bridge:
+            try:
+                self.bridge.send_pause()
+            except Exception:
+                pass
         if self.logger:
-            self.logger.log("CONFIRM_EXIT opened (long PAR)")
+            self.logger.log("CONFIRM_EXIT opened (long PAR) — pause sent")
         if hasattr(self, "status_label") and self.status_label:
             try:
-                self.status_label.setText("Conferma uscita: scanner ESCI / ANNULLA")
+                self.status_label.setText(
+                    "GIOCO IN PAUSA — conferma: scanner ESCI / ANNULLA"
+                )
             except RuntimeError:
                 pass
 
     def _confirm_exit_choose(self):
         if self.exit_scan_index == 0:
             if self.logger:
-                self.logger.log("Exit confirmed via short PAR — closing Unity")
-            # stop_unity: UDP exit + wait + force kill (elevated if needed)
-            if self.bridge:
+                self.logger.log("Exit confirmed via short PAR — force closing Unity")
+            bridge = self.bridge
+            self.bridge = None  # prevent end_session from killing twice / double UAC
+            if bridge is not None:
                 try:
-                    self.bridge.stop_unity()
+                    bridge.stop_unity()
                 except Exception as e:
                     if self.logger:
                         self.logger.log(f"stop_unity error: {e}")
+                try:
+                    bridge.close()
+                except Exception:
+                    pass
             self._request_exit()
         else:
             if self.logger:
