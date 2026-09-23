@@ -41,6 +41,7 @@ class UnityGameBridge:
         self._running_check_t = 0.0
         self._cached_pids = []
         self._closing = False
+        self._launched_elevated = False
 
     def _launch_args(self):
         """Unity standalone CLI so the window is movable on multi-monitor setups."""
@@ -74,30 +75,53 @@ class UnityGameBridge:
                 f"unity_game.exe_path non è un file .exe: {path}"
             )
 
-        self.stop_unity()
+        # Cleanup leftovers without UAC (exit path is the only elevate-kill)
+        if self._exe_name:
+            self.stop_unity(allow_elevate=False)
         self._exe_name = path.name
         self._closing = False
 
-        launch_params = self._launch_args() or None
+        launch_params = self._launch_args()
+        launched = False
 
-        # Launch elevated (UAC "run as administrator")
-        # ShellExecuteW "runas" — needed when normal Popen hits WinError 5
-        rc = ctypes.windll.shell32.ShellExecuteW(
-            None,
-            "runas",
-            str(path),
-            launch_params,
-            str(path.parent),
-            1,  # SW_SHOWNORMAL
-        )
-        # Per MSDN: return value > 32 means success
-        if rc <= 32:
-            raise PermissionError(
-                f"Avvio come amministratore fallito (codice {rc}) per:\n{path}\n"
-                "Se hai annullato UAC, riprova e conferma Sì."
+        # Prefer normal launch (0 UAC). Elevate only if Access Denied.
+        try:
+            args = [str(path)]
+            if launch_params:
+                args.extend(launch_params.split())
+            subprocess.Popen(
+                args,
+                cwd=str(path.parent),
+                creationflags=subprocess.DETACHED_PROCESS
+                if hasattr(subprocess, "DETACHED_PROCESS")
+                else 0,
             )
+            launched = True
+        except OSError as e:
+            # WinError 5 = access denied, 740 = elevation required → one UAC via runas
+            winerr = getattr(e, "winerror", None)
+            if winerr not in (5, 740) and e.errno not in (13,):
+                raise
 
-        self._proc = True  # marker: launched (no Popen handle across UAC)
+        if not launched:
+            rc = ctypes.windll.shell32.ShellExecuteW(
+                None,
+                "runas",
+                str(path),
+                launch_params or None,
+                str(path.parent),
+                1,  # SW_SHOWNORMAL
+            )
+            if rc <= 32:
+                raise PermissionError(
+                    f"Avvio come amministratore fallito (codice {rc}) per:\n{path}\n"
+                    "Se hai annullato UAC, riprova e conferma Sì."
+                )
+            self._launched_elevated = True
+        else:
+            self._launched_elevated = False
+
+        self._proc = True  # marker: launched (no reliable Popen handle across UAC)
         self._running_cached = True
         self._running_check_t = time.time()
         if self.startup_delay > 0:
@@ -321,8 +345,12 @@ class UnityGameBridge:
         except Exception:
             pass
 
-    def stop_unity(self):
-        """Graceful UDP exit, then force-kill (single elevated attempt if needed)."""
+    def stop_unity(self, allow_elevate=True):
+        """Graceful UDP exit, then force-kill.
+
+        allow_elevate=True (user exit): at most ONE UAC prompt for taskkill.
+        allow_elevate=False (pre-start cleanup): never prompt UAC.
+        """
         if self._closing:
             return
         self._closing = True
@@ -356,10 +384,9 @@ class UnityGameBridge:
                 self._kill_all(elevated=False)
                 time.sleep(0.5)
 
-            # 3) ONE elevated kill (UAC once) — required when Unity was started with runas
-            if self._force_check_running():
+            # 3) At most ONE elevated kill on user exit (UAC once) if still alive
+            if allow_elevate and self._force_check_running():
                 self._kill_all(elevated=True)
-                # Wait for elevated kill to take effect
                 deadline = time.time() + 3.0
                 while time.time() < deadline:
                     if not self._force_check_running():
@@ -369,6 +396,7 @@ class UnityGameBridge:
             self._proc = None
             self._running_cached = False
             self._running_check_t = 0.0
+            self._launched_elevated = False
         finally:
             self._closing = False
 

@@ -93,24 +93,25 @@ class PupilLiveOverlay(QtWidgets.QWidget):
         self.press_count = 0
 
     def dock_to_unity_rect(self, left, top, right, bottom, margin=4):
-        """Stick to Unity's right edge; height matches the game window."""
+        """Stick to Unity's right edge; ~3/4 height, vertically centered."""
         unity_h = max(280, int(bottom - top))
         unity_w = max(320, int(right - left))
+        strip_h = max(240, int(unity_h * 0.75))
         # Strip ~9% of game width, clamped (readable but not huge)
         strip_w = int(max(100, min(160, unity_w * 0.09)))
         self.setFixedWidth(strip_w)
-        self.setFixedHeight(unity_h)
-        # Scale eye / bar with window height
-        eye_h = max(56, min(96, unity_h // 7))
+        self.setFixedHeight(strip_h)
+        # Scale eye / bar with strip height
+        eye_h = max(56, min(96, strip_h // 7))
         eye_w = max(72, min(strip_w - 16, int(eye_h * 1.3)))
         try:
             self.digital_eye.setFixedSize(eye_w, eye_h)
             self.bar.setFixedWidth(max(22, min(36, strip_w // 4)))
-            self.bar.setMinimumHeight(max(160, unity_h // 2))
+            self.bar.setMinimumHeight(max(140, strip_h // 2))
         except RuntimeError:
             pass
         x = int(right) - strip_w - margin
-        y = int(top)
+        y = int(top) + (unity_h - strip_h) // 2
         self.move(x, y)
 
     def update_eye(self, x, y, area):
