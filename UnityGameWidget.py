@@ -176,7 +176,10 @@ class PupilLiveOverlay(QtWidgets.QWidget):
 
 
 class ExitConfirmOverlay(QtWidgets.QWidget):
-    """Always-on-top exit scanner: ESCI / ANNULLA, 3s each, short PAR selects."""
+    """Always-on-top exit chooser: ESCI / ANNULLA via PAR scan, mouse, or keyboard."""
+
+    chosen = QtCore.pyqtSignal(int)  # 0 = ESCI, 1 = ANNULLA
+    scan_changed = QtCore.pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(
@@ -186,8 +189,9 @@ class ExitConfirmOverlay(QtWidgets.QWidget):
             | QtCore.Qt.Tool,
         )
         self.setWindowTitle("Esci?")
-        self.setFixedSize(420, 280)
+        self.setFixedSize(420, 300)
         self.setStyleSheet("background-color: #1a1a1a; color: #eee;")
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -199,15 +203,22 @@ class ExitConfirmOverlay(QtWidgets.QWidget):
         layout.addWidget(title)
 
         tip = QtWidgets.QLabel(
-            "PAR breve = seleziona la voce evidenziata\n"
-            "(scansione automatica ogni 3 secondi)"
+            "PAR breve = voce evidenziata\n"
+            "Mouse = clic sul pulsante\n"
+            "Tastiera: ←/→ cambia · Invio/Spazio conferma · Esc = Annulla"
         )
         tip.setAlignment(QtCore.Qt.AlignCenter)
-        tip.setStyleSheet("font-size: 13px; color: #aaa;")
+        tip.setStyleSheet("font-size: 12px; color: #aaa;")
         layout.addWidget(tip)
 
         self.exit_btn = QtWidgets.QPushButton("ESCI")
         self.cancel_btn = QtWidgets.QPushButton("ANNULLA")
+        self.exit_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.cancel_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.exit_btn.setFocusPolicy(QtCore.Qt.NoFocus)
+        self.cancel_btn.setFocusPolicy(QtCore.Qt.NoFocus)
+        self.exit_btn.clicked.connect(lambda: self.chosen.emit(0))
+        self.cancel_btn.clicked.connect(lambda: self.chosen.emit(1))
         layout.addWidget(self.exit_btn)
         layout.addWidget(self.cancel_btn)
 
@@ -229,9 +240,51 @@ class ExitConfirmOverlay(QtWidgets.QWidget):
                 self.active_style if i == self.scan_index else self.inactive_style
             )
 
-    def set_scan_index(self, index):
+    def set_scan_index(self, index, emit=True):
         self.scan_index = int(index) % 2
         self._apply_scan_styles()
+        if emit:
+            self.scan_changed.emit(self.scan_index)
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key in (
+            QtCore.Qt.Key_Return,
+            QtCore.Qt.Key_Enter,
+            QtCore.Qt.Key_Space,
+        ):
+            self.chosen.emit(self.scan_index)
+            event.accept()
+            return
+        if key == QtCore.Qt.Key_Escape:
+            self.chosen.emit(1)
+            event.accept()
+            return
+        if key in (
+            QtCore.Qt.Key_Left,
+            QtCore.Qt.Key_Up,
+            QtCore.Qt.Key_Right,
+            QtCore.Qt.Key_Down,
+            QtCore.Qt.Key_Tab,
+        ):
+            self.set_scan_index(1 - self.scan_index)
+            event.accept()
+            return
+        if key == QtCore.Qt.Key_1:
+            self.chosen.emit(0)
+            event.accept()
+            return
+        if key == QtCore.Qt.Key_2:
+            self.chosen.emit(1)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.raise_()
+        self.activateWindow()
+        self.setFocus(QtCore.Qt.ActiveWindowFocusReason)
 
     def place_center(self, rect=None):
         """Center on Unity window rect (l,t,r,b) if given, else primary screen."""
@@ -763,12 +816,16 @@ class UnityGameWidget(QWidget):
                 pass
         self._close_exit_overlay()
         self.exit_overlay = ExitConfirmOverlay()
+        self.exit_overlay.chosen.connect(self._on_exit_overlay_chosen)
+        self.exit_overlay.scan_changed.connect(self._on_exit_scan_changed)
         self.exit_overlay.place_center(self._unity_window_rect())
         self.exit_scan_index = 0
         self.exit_scan_start_time = time.time()
-        self.exit_overlay.set_scan_index(0)
+        self.exit_overlay.set_scan_index(0, emit=False)
         self.exit_overlay.show()
         self.exit_overlay.raise_()
+        self.exit_overlay.activateWindow()
+        self.exit_overlay.setFocus()
         self._sync_overlays_to_unity(force=True)
         # Re-send pause after overlay is up (in case first packets were lost)
         if self.bridge:
@@ -781,15 +838,32 @@ class UnityGameWidget(QWidget):
         if hasattr(self, "status_label") and self.status_label:
             try:
                 self.status_label.setText(
-                    "GIOCO IN PAUSA — conferma: scanner ESCI / ANNULLA"
+                    "GIOCO IN PAUSA — ESCI/ANNULLA: PAR, mouse o tastiera"
                 )
             except RuntimeError:
                 pass
 
-    def _confirm_exit_choose(self):
+    def _on_exit_scan_changed(self, index):
+        """Keep auto-scan + PAR in sync when user flips with keyboard."""
+        self.exit_scan_index = int(index) % 2
+        self.exit_scan_start_time = time.time()
+
+    def _on_exit_overlay_chosen(self, index):
+        """Mouse / keyboard selection from the exit overlay."""
+        if self.play_mode != "CONFIRM_EXIT":
+            return
+        self.exit_scan_index = int(index) % 2
+        if self.exit_overlay is not None:
+            try:
+                self.exit_overlay.set_scan_index(self.exit_scan_index, emit=False)
+            except RuntimeError:
+                pass
+        self._confirm_exit_choose(source="mouse/tastiera")
+
+    def _confirm_exit_choose(self, source="PAR breve"):
         if self.exit_scan_index == 0:
             if self.logger:
-                self.logger.log("Exit confirmed via short PAR — force closing Unity")
+                self.logger.log(f"Exit confirmed via {source} — force closing Unity")
             bridge = self.bridge
             self.bridge = None  # prevent end_session from killing twice / double UAC
             if bridge is not None:
@@ -805,7 +879,7 @@ class UnityGameWidget(QWidget):
             self._request_exit()
         else:
             if self.logger:
-                self.logger.log("Exit cancelled via short PAR")
+                self.logger.log(f"Exit cancelled via {source}")
             self._close_exit_overlay()
             self.play_mode = "PLAYING"
             if self.bridge:
@@ -823,7 +897,14 @@ class UnityGameWidget(QWidget):
         if elapsed >= self.exit_scan_interval:
             self.exit_scan_start_time = time.time()
             self.exit_scan_index = 1 - self.exit_scan_index
-            self.exit_overlay.set_scan_index(self.exit_scan_index)
+            self.exit_overlay.set_scan_index(self.exit_scan_index, emit=False)
+            # Keep keyboard focus on the overlay while scanning
+            try:
+                self.exit_overlay.raise_()
+                self.exit_overlay.activateWindow()
+                self.exit_overlay.setFocus()
+            except RuntimeError:
+                pass
 
     def _enter_tracking_lost(self):
         if self.play_mode == "TRACKING_LOST":
