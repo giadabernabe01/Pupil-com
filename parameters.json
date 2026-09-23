@@ -45,7 +45,11 @@
         "scan_interval_dur": 3.5,
         "exit_scan_interval_dur": 3.0,
         "tracking_lost_sec": 3.0,
-        "tracking_ok_sec": 1.0
+        "tracking_ok_sec": 1.0,
+        "fullscreen": false,
+        "window_width": 1280,
+        "window_height": 720,
+        "monitor": 0
     },
     "calibration_widget": {
         "max_loops": 3,

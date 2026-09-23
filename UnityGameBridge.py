@@ -13,17 +13,47 @@ from pathlib import Path
 class UnityGameBridge:
     """Launch SpaceEvaders.exe and forward short PAR events as UDP presses."""
 
-    def __init__(self, host="127.0.0.1", port=47890, exe_path="", startup_delay=2.0):
+    def __init__(
+        self,
+        host="127.0.0.1",
+        port=47890,
+        exe_path="",
+        startup_delay=2.0,
+        fullscreen=False,
+        window_width=1280,
+        window_height=720,
+        monitor=0,
+    ):
         self.host = host
         self.port = int(port)
         self.exe_path = exe_path
         self.startup_delay = float(startup_delay)
+        self.fullscreen = bool(fullscreen)
+        self.window_width = int(window_width) if window_width else 0
+        self.window_height = int(window_height) if window_height else 0
+        # Unity -monitor is 1-based; 0 = omit (default / primary)
+        self.monitor = int(monitor) if monitor else 0
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._proc = None
         self._exe_name = None
         self._running_cached = False
         self._running_check_t = 0.0
         self._closing = False
+
+    def _launch_args(self):
+        """Unity standalone CLI so the window is movable on multi-monitor setups."""
+        parts = []
+        if self.fullscreen:
+            parts.append("-screen-fullscreen 1")
+        else:
+            parts.append("-screen-fullscreen 0")
+            if self.window_width > 0:
+                parts.append(f"-screen-width {self.window_width}")
+            if self.window_height > 0:
+                parts.append(f"-screen-height {self.window_height}")
+        if self.monitor > 0:
+            parts.append(f"-monitor {self.monitor}")
+        return " ".join(parts)
 
     def start_unity(self):
         path = Path(self.exe_path).expanduser()
@@ -46,13 +76,15 @@ class UnityGameBridge:
         self._exe_name = path.name
         self._closing = False
 
+        launch_params = self._launch_args() or None
+
         # Launch elevated (UAC "run as administrator")
         # ShellExecuteW "runas" — needed when normal Popen hits WinError 5
         rc = ctypes.windll.shell32.ShellExecuteW(
             None,
             "runas",
             str(path),
-            None,
+            launch_params,
             str(path.parent),
             1,  # SW_SHOWNORMAL
         )

@@ -394,6 +394,10 @@ class UnityGameWidget(QWidget):
             port=game_config.get("udp_port", 47890),
             exe_path=game_config.get("exe_path", ""),
             startup_delay=game_config.get("startup_delay", 2.0),
+            fullscreen=game_config.get("fullscreen", False),
+            window_width=game_config.get("window_width", 1280),
+            window_height=game_config.get("window_height", 720),
+            monitor=game_config.get("monitor", 0),
         )
 
         self.reset_to_initialization()
