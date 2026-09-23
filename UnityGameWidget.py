@@ -92,6 +92,27 @@ class PupilLiveOverlay(QtWidgets.QWidget):
 
         self.press_count = 0
 
+    def dock_to_unity_rect(self, left, top, right, bottom, margin=4):
+        """Stick to Unity's right edge; height matches the game window."""
+        unity_h = max(280, int(bottom - top))
+        unity_w = max(320, int(right - left))
+        # Strip ~9% of game width, clamped (readable but not huge)
+        strip_w = int(max(100, min(160, unity_w * 0.09)))
+        self.setFixedWidth(strip_w)
+        self.setFixedHeight(unity_h)
+        # Scale eye / bar with window height
+        eye_h = max(56, min(96, unity_h // 7))
+        eye_w = max(72, min(strip_w - 16, int(eye_h * 1.3)))
+        try:
+            self.digital_eye.setFixedSize(eye_w, eye_h)
+            self.bar.setFixedWidth(max(22, min(36, strip_w // 4)))
+            self.bar.setMinimumHeight(max(160, unity_h // 2))
+        except RuntimeError:
+            pass
+        x = int(right) - strip_w - margin
+        y = int(top)
+        self.move(x, y)
+
     def update_eye(self, x, y, area):
         self.digital_eye.update_eye(x, y, area)
 
@@ -211,7 +232,14 @@ class ExitConfirmOverlay(QtWidgets.QWidget):
         self.scan_index = int(index) % 2
         self._apply_scan_styles()
 
-    def place_center(self):
+    def place_center(self, rect=None):
+        """Center on Unity window rect (l,t,r,b) if given, else primary screen."""
+        if rect is not None:
+            left, top, right, bottom = rect
+            cx = (left + right) // 2
+            cy = (top + bottom) // 2
+            self.move(cx - self.width() // 2, cy - self.height() // 2)
+            return
         screen = QApplication.primaryScreen()
         if screen is None:
             return
@@ -288,7 +316,14 @@ class TrackingLostOverlay(QtWidgets.QWidget):
             else "font-size: 16px; font-weight: bold; color: #f39c12;"
         )
 
-    def place_center(self):
+    def place_center(self, rect=None):
+        """Center on Unity window rect (l,t,r,b) if given, else primary screen."""
+        if rect is not None:
+            left, top, right, bottom = rect
+            cx = (left + right) // 2
+            cy = (top + bottom) // 2
+            self.move(cx - self.width() // 2, cy - self.height() // 2)
+            return
         screen = QApplication.primaryScreen()
         if screen is None:
             return
@@ -345,6 +380,8 @@ class UnityGameWidget(QWidget):
         self.exit_scan_start_time = 0.0
         self.tracking_ok_since = None
         self._pre_tracking_mode = "PLAYING"
+        self._overlay_dock_t = 0.0
+        self._last_unity_rect = None
 
         self.reset_to_initialization()
 
@@ -552,22 +589,78 @@ class UnityGameWidget(QWidget):
             except RuntimeError:
                 self.live_overlay = None
 
+    def _unity_window_rect(self):
+        if not self.bridge:
+            return None
+        try:
+            return self.bridge.get_main_window_rect()
+        except Exception:
+            return None
+
+    def _sync_overlays_to_unity(self, force=False):
+        """Keep PAR strip (+ modal overlays) glued to the Unity window / monitor."""
+        if not self.game_active:
+            return
+        now = time.time()
+        if not force and now - self._overlay_dock_t < 0.35:
+            return
+        self._overlay_dock_t = now
+
+        rect = self._unity_window_rect()
+        if rect is None:
+            return
+        if (
+            not force
+            and self._last_unity_rect is not None
+            and rect == self._last_unity_rect
+        ):
+            return
+        self._last_unity_rect = rect
+
+        if self.live_overlay is not None:
+            try:
+                self.live_overlay.dock_to_unity_rect(*rect)
+                self.live_overlay.raise_()
+            except RuntimeError:
+                self.live_overlay = None
+
+        if self.exit_overlay is not None:
+            try:
+                self.exit_overlay.place_center(rect)
+                self.exit_overlay.raise_()
+            except RuntimeError:
+                self.exit_overlay = None
+
+        if self.tracking_overlay is not None:
+            try:
+                self.tracking_overlay.place_center(rect)
+                self.tracking_overlay.raise_()
+            except RuntimeError:
+                self.tracking_overlay = None
+
     def _open_live_overlay(self):
         self._close_live_overlay()
         self.live_overlay = PupilLiveOverlay(device_type=self.device_type)
-        screen = QApplication.primaryScreen()
-        if screen is not None:
-            geo = screen.availableGeometry()
-            # Tall strip glued to the right edge during Unity play
-            strip_h = min(520, max(420, geo.height() - 80))
-            self.live_overlay.setFixedHeight(strip_h)
-            self.live_overlay.adjustSize()
-            w = self.live_overlay.width()
-            x = geo.right() - w - 8
-            y = geo.top() + max(20, (geo.height() - strip_h) // 2)
-            self.live_overlay.move(x, y)
+        rect = self._unity_window_rect()
+        if rect is not None:
+            self.live_overlay.dock_to_unity_rect(*rect)
+        else:
+            # Fallback until Unity HWND appears
+            screen = QApplication.primaryScreen()
+            if screen is not None:
+                geo = screen.availableGeometry()
+                strip_h = min(520, max(420, geo.height() - 80))
+                self.live_overlay.setFixedHeight(strip_h)
+                self.live_overlay.adjustSize()
+                w = self.live_overlay.width()
+                x = geo.right() - w - 8
+                y = geo.top() + max(20, (geo.height() - strip_h) // 2)
+                self.live_overlay.move(x, y)
         self.live_overlay.show()
         self.live_overlay.raise_()
+        self._overlay_dock_t = 0.0
+        self._last_unity_rect = None
+        self._sync_overlays_to_unity(force=True)
 
     def _close_live_overlay(self):
         if self.live_overlay is not None:
@@ -669,12 +762,13 @@ class UnityGameWidget(QWidget):
                 pass
         self._close_exit_overlay()
         self.exit_overlay = ExitConfirmOverlay()
-        self.exit_overlay.place_center()
+        self.exit_overlay.place_center(self._unity_window_rect())
         self.exit_scan_index = 0
         self.exit_scan_start_time = time.time()
         self.exit_overlay.set_scan_index(0)
         self.exit_overlay.show()
         self.exit_overlay.raise_()
+        self._sync_overlays_to_unity(force=True)
         # Re-send pause after overlay is up (in case first packets were lost)
         if self.bridge:
             try:
@@ -746,9 +840,10 @@ class UnityGameWidget(QWidget):
         self._close_tracking_overlay()
         self.tracking_overlay = TrackingLostOverlay(device_type=self.device_type)
         self.tracking_overlay.force_btn.clicked.connect(self._reset_tracking_filters)
-        self.tracking_overlay.place_center()
+        self.tracking_overlay.place_center(self._unity_window_rect())
         self.tracking_overlay.show()
         self.tracking_overlay.raise_()
+        self._sync_overlays_to_unity(force=True)
         if self.logger:
             self.logger.log("TRACKING_LOST overlay opened")
 
@@ -822,8 +917,8 @@ class UnityGameWidget(QWidget):
         self.clear_ui()
 
         self.info_label = QtWidgets.QLabel(
-            "Partita attiva — monitor PAR in alto a destra\n"
-            "(Digital Eye + barra, sempre sopra Unity).\n\n"
+            "Partita attiva — barra PAR agganciata a Unity\n"
+            "(segue la finestra del gioco automaticamente).\n\n"
             "Lontano → vicino breve = azione"
         )
         self.info_label.setAlignment(QtCore.Qt.AlignCenter)
@@ -880,6 +975,9 @@ class UnityGameWidget(QWidget):
         self._update_signal_ui(
             raw_area, self.filtered_val, current_thresh, status, raw_x, raw_y
         )
+
+        if self.game_active:
+            self._sync_overlays_to_unity()
 
         if self.plotter:
             self.plotter.add_data(self.filtered_val, current_thresh, exit_thresh)

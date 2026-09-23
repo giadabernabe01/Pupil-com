@@ -7,6 +7,7 @@ import json
 import socket
 import subprocess
 import time
+from ctypes import wintypes
 from pathlib import Path
 
 
@@ -38,6 +39,7 @@ class UnityGameBridge:
         self._exe_name = None
         self._running_cached = False
         self._running_check_t = 0.0
+        self._cached_pids = []
         self._closing = False
 
     def _launch_args(self):
@@ -172,6 +174,7 @@ class UnityGameBridge:
                 creationflags=self._creation_flags(),
             )
         except Exception:
+            self._cached_pids = []
             return []
 
         import csv
@@ -185,6 +188,7 @@ class UnityGameBridge:
                     pids.append(int(row[1]))
                 except ValueError:
                     continue
+        self._cached_pids = pids
         return pids
 
     def _force_check_running(self):
@@ -207,7 +211,72 @@ class UnityGameBridge:
         self._running_cached = len(pids) > 0
         if not self._running_cached:
             self._proc = None
+            self._cached_pids = []
         return self._running_cached
+
+    def get_main_window_rect(self):
+        """Largest visible HWND for Space Evaders: (left, top, right, bottom) or None.
+
+        Used to dock the PAR strip / overlays onto the same monitor as Unity.
+        """
+        if not self.is_running():
+            return None
+        pids = set(self._cached_pids)
+        if not pids:
+            pids = set(self._list_pids())
+        if not pids:
+            return None
+
+        user32 = ctypes.windll.user32
+        WNDENUMPROC = ctypes.WINFUNCTYPE(
+            ctypes.c_bool, wintypes.HWND, wintypes.LPARAM
+        )
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", ctypes.c_long),
+                ("top", ctypes.c_long),
+                ("right", ctypes.c_long),
+                ("bottom", ctypes.c_long),
+            ]
+
+        best = [None]  # (area, left, top, right, bottom)
+
+        def _cb(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            # Skip owned popups / tool windows without a real title bar app frame
+            if user32.GetWindow(hwnd, 4):  # GW_OWNER
+                return True
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value not in pids:
+                return True
+            rect = RECT()
+            if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                return True
+            w = int(rect.right - rect.left)
+            h = int(rect.bottom - rect.top)
+            if w < 200 or h < 200:
+                return True
+            area = w * h
+            if best[0] is None or area > best[0][0]:
+                best[0] = (
+                    area,
+                    int(rect.left),
+                    int(rect.top),
+                    int(rect.right),
+                    int(rect.bottom),
+                )
+            return True
+
+        try:
+            user32.EnumWindows(WNDENUMPROC(_cb), 0)
+        except Exception:
+            return None
+        if best[0] is None:
+            return None
+        return best[0][1:]
 
     def _kill_all(self, elevated=False):
         """Force-kill every matching process. Elevated path uses ONE UAC prompt."""
