@@ -14,6 +14,9 @@ from DigitalEye import DigitalEyeWidget
 from HelperClasses import SessionLogger, DataPlotter, DataSaver
 from UnityGameBridge import UnityGameBridge
 
+# FUTURE: True = long PAR in-game apre il menu ESCI/ANNULLA (ora disattivato).
+ENABLE_LONG_PAR_EXIT = False
+
 
 class PupilLiveOverlay(QtWidgets.QWidget):
     """Always-on-top strip on the right: small Digital Eye above a vertical threshold bar."""
@@ -1027,10 +1030,10 @@ class UnityGameWidget(QWidget):
         self._open_live_overlay()
         self._last_udp_msg = "UDP: in ascolto verso Unity…"
         self.play_mode = "PLAYING"
-        self.info_label.setText(
-            self.info_label.text()
-            + "\n\nPAR lungo = menù Esci / Annulla"
-        )
+        # FUTURE (ENABLE_LONG_PAR_EXIT):
+        # self.info_label.setText(
+        #     self.info_label.text() + "\n\nPAR lungo = menù Esci / Annulla"
+        # )
 
         if self.logger:
             self.logger.log("Unity started; live PAR overlay + Digital Eye open")
@@ -1159,9 +1162,12 @@ class UnityGameWidget(QWidget):
                     except RuntimeError:
                         pass
             elif status == 2:
+                # Long PAR still logged/plotted; exit menu is optional (flag above).
                 if self.plotter:
                     self.plotter.mark_constriction("long")
-                self._enter_confirm_exit()
+                # FUTURE: long PAR → confirm exit (ESCI / ANNULLA)
+                if ENABLE_LONG_PAR_EXIT:
+                    self._enter_confirm_exit()
             return
 
         if self.state == "INITIALIZATION":
