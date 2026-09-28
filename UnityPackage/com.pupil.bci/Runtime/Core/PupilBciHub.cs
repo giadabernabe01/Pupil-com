@@ -11,9 +11,13 @@ namespace Pupil.Bci
     [DefaultExecutionOrder(-100)]
     public sealed class PupilBciHub : MonoBehaviour
     {
+        static PupilBciHub _instance;
+
         [SerializeField] PupilBciConfig config;
         [SerializeField] bool autoStart = true;
         [SerializeField] bool logEvents;
+        [Tooltip("Keep Hub alive across scene loads so PAR / bar work in menus too.")]
+        [SerializeField] bool persistAcrossScenes = true;
         [SerializeField] PupilBciUnityEvents unityEvents = new PupilBciUnityEvents();
 
         GazepointClient _client;
@@ -70,6 +74,17 @@ namespace Pupil.Bci
 
         void Awake()
         {
+            if (persistAcrossScenes)
+            {
+                if (_instance != null && _instance != this)
+                {
+                    Destroy(gameObject);
+                    return;
+                }
+                _instance = this;
+                DontDestroyOnLoad(gameObject);
+            }
+
             if (config == null)
                 config = PupilBciConfig.CreateRuntimeDefaults();
             RebuildProcessors();
@@ -95,7 +110,13 @@ namespace Pupil.Bci
         }
 
         void OnDisable() => StopBci();
-        void OnDestroy() => StopBci();
+
+        void OnDestroy()
+        {
+            if (_instance == this)
+                _instance = null;
+            StopBci();
+        }
 
         public void StartBci()
         {
@@ -146,8 +167,13 @@ namespace Pupil.Bci
 
         public bool TryOpenGazepoint(out string error)
         {
-            return GazepointClient.TryLaunchGazepoint(config != null ? config.gazepointExePath : null, out error);
+            var path = config != null ? config.gazepointExePath : null;
+            return GazepointWindowFocus.BringToFront(path, maximize: false, out error);
         }
+
+        /// <summary>Focus Gazepoint window if already running (no relaunch). Windowed by default. Windowed by default.</summary>
+        public bool FocusGazepointWindow(bool maximize = false) =>
+            GazepointWindowFocus.FocusExisting(maximize);
 
         public void ResetFilters()
         {

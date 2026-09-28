@@ -35,7 +35,7 @@ namespace Pupil.Bci
 
         [Header("Tracking")]
         [Tooltip("Seconds of invalid pupil area before OnTrackingLost.")]
-        public float trackingLostSec = 5f;
+        public float trackingLostSec = 2f;
 
         [Header("Connection / baseline setup")]
         [Tooltip("Seconds of valid pupil signal required before baseline starts.")]

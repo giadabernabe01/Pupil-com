@@ -1,28 +1,39 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace Pupil.Bci
 {
     /// <summary>
-    /// Live vertical PAR strip (same idea as Pupil-com Qt overlay):
-    /// fill rises when relaxed (area above threshold), drops when looking near.
-    /// Threshold marker sits at mid-bar (area == threshold → 50% fill).
+    /// Live vertical PAR strip like Pupil-com:
+    /// fill height follows area amplitude; green above threshold, red below.
+    /// Persists across scenes/menus so it stays visible as a positioning aid.
     /// </summary>
     public sealed class PupilLiveSignalStrip : MonoBehaviour
     {
+        static PupilLiveSignalStrip _instance;
+
         [SerializeField] PupilBciHub hub;
         [SerializeField] bool buildUiIfMissing = true;
+        [Tooltip("Keep bar alive across scene loads (menus, etc.).")]
+        [SerializeField] bool persistAcrossScenes = true;
         [SerializeField] float stripWidth = 132f;
         [SerializeField] float stripHeight = 460f;
+        [Tooltip("Smooth bar motion (higher = snappier).")]
+        [SerializeField] float barLerp = 14f;
 
         Image _fill;
+        RectTransform _fillRt;
         RectTransform _threshMark;
         Text _title;
         Text _values;
         Text _hint;
         Text _state;
+        Canvas _canvas;
         float _flashUntil;
+        float _displayFill = 0.5f;
         int _pressCount;
+        bool _under;
 
         public void Bind(PupilBciHub target)
         {
@@ -31,16 +42,69 @@ namespace Pupil.Bci
             Subscribe();
         }
 
+        void Awake()
+        {
+            if (persistAcrossScenes)
+            {
+                if (_instance != null && _instance != this)
+                {
+                    Destroy(gameObject);
+                    return;
+                }
+
+                _instance = this;
+                DontDestroyOnLoad(transform.root.gameObject);
+            }
+        }
+
         void OnEnable()
         {
             if (hub == null)
                 hub = GetComponent<PupilBciHub>() ?? FindObjectOfType<PupilBciHub>();
-            if (buildUiIfMissing && _fill == null)
+            if (buildUiIfMissing && _fillRt == null)
                 BuildUi();
+            EnsureCanvasOnTop();
+            Subscribe();
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+
+        void OnDisable()
+        {
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            Unsubscribe();
+        }
+
+        void OnDestroy()
+        {
+            if (_instance == this)
+                _instance = null;
+        }
+
+        void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            // Rebind if hub was on a destroyed scene object; keep UI on top of menus.
+            if (hub == null)
+                hub = FindObjectOfType<PupilBciHub>();
+            EnsureCanvasOnTop();
             Subscribe();
         }
 
-        void OnDisable() => Unsubscribe();
+        void LateUpdate()
+        {
+            if (hub == null)
+                hub = FindObjectOfType<PupilBciHub>();
+            EnsureCanvasOnTop();
+        }
+
+        void EnsureCanvasOnTop()
+        {
+            if (_canvas == null) return;
+            // Above typical menu canvases so the aid stays visible.
+            if (_canvas.sortingOrder < 32000)
+                _canvas.sortingOrder = 32000;
+            transform.SetAsLastSibling();
+        }
 
         void Subscribe()
         {
@@ -89,46 +153,61 @@ namespace Pupil.Bci
 
         void OnSample(PupilSample s)
         {
-            if (_fill == null) return;
+            if (_fillRt == null) return;
 
             float t = s.Threshold;
             float a = s.FilteredArea;
-            // Python overlay mapping: ratio = A/S ; bar = clamp(ratio - 0.5)
+            // Same mapping as Pupil-com Qt bar: ratio=A/S, fill=clamp(ratio-0.5)
+            // → at soglia (A==S) fill=0.5; lontano sale; vicino scende.
             float ratio = t > 1e-6f ? a / t : 0f;
-            float bar = Mathf.Clamp01(ratio - 0.5f);
-            _fill.fillAmount = bar;
+            float target = Mathf.Clamp01(ratio - 0.5f);
+            _displayFill = Mathf.Lerp(_displayFill, target, 1f - Mathf.Exp(-barLerp * Time.unscaledDeltaTime));
+            ApplyFillHeight(_displayFill);
 
+            _under = s.UnderThreshold;
             bool flash = Time.unscaledTime < _flashUntil;
-            if (flash)
-                _fill.color = new Color(0.49f, 0.99f, 0f);
-            else if (s.TrackingLost || hub.Phase == PupilBciPhase.WaitingForGazepoint)
-                _fill.color = new Color(0.45f, 0.2f, 0.2f);
-            else if (s.UnderThreshold)
-                _fill.color = new Color(0.91f, 0.3f, 0.24f); // near / constriction
-            else
-                _fill.color = new Color(0.18f, 0.8f, 0.44f); // far / ok
+            if (_fill != null)
+            {
+                if (flash)
+                    _fill.color = new Color(0.49f, 0.99f, 0f);
+                else if (s.TrackingLost || (hub != null && hub.Phase == PupilBciPhase.WaitingForGazepoint))
+                    _fill.color = new Color(0.45f, 0.2f, 0.2f);
+                else if (_under)
+                    _fill.color = new Color(0.91f, 0.3f, 0.24f); // sotto soglia = rosso
+                else
+                    _fill.color = new Color(0.18f, 0.8f, 0.44f); // sopra soglia = verde
+            }
 
             if (_values != null)
             {
-                _values.text = hub.Phase == PupilBciPhase.WaitingForGazepoint
+                _values.text = hub != null && hub.Phase == PupilBciPhase.WaitingForGazepoint
                     ? "—"
                     : $"A {a:0}\nS {(t > 1e-6f ? t.ToString("0") : "—")}";
             }
 
             if (_hint != null)
-                _hint.text = s.UnderThreshold ? "↓ vicino" : "↑ lontano";
+                _hint.text = _under ? "↓ vicino" : "↑ lontano";
 
             if (!flash && _state != null && hub != null)
                 RefreshPhase(hub.Phase, hub.StatusMessage);
+        }
+
+        void ApplyFillHeight(float fill01)
+        {
+            // Anchor-based fill from bottom — reliable unlike Image.Filled without sprite
+            _fillRt.anchorMin = new Vector2(0f, 0f);
+            _fillRt.anchorMax = new Vector2(1f, Mathf.Clamp01(fill01));
+            _fillRt.offsetMin = new Vector2(3f, 3f);
+            _fillRt.offsetMax = new Vector2(-3f, -3f);
         }
 
         void BuildUi()
         {
             var canvasGo = new GameObject("PupilLiveSignalCanvas");
             canvasGo.transform.SetParent(transform, false);
-            var canvas = canvasGo.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 500;
+            _canvas = canvasGo.AddComponent<Canvas>();
+            _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            _canvas.sortingOrder = 32000;
             var scaler = canvasGo.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920, 1080);
@@ -149,7 +228,6 @@ namespace Pupil.Bci
             _values = CreateText(panel.transform, "A —\nS —", 14, FontStyle.Normal, new Color(0.85f, 0.85f, 0.85f),
                 new Vector2(0.5f, 1f), new Vector2(0, -48), new Vector2(stripWidth - 16, 40));
 
-            // Bar background
             var barBg = Create("BarBg", panel.transform);
             var bgRt = barBg.GetComponent<RectTransform>();
             bgRt.anchorMin = new Vector2(0.5f, 0.12f);
@@ -159,31 +237,25 @@ namespace Pupil.Bci
             barBg.AddComponent<Image>().color = new Color(0.22f, 0.22f, 0.22f, 1f);
 
             var fillGo = Create("Fill", barBg.transform);
-            var fillRt = fillGo.GetComponent<RectTransform>();
-            fillRt.anchorMin = Vector2.zero;
-            fillRt.anchorMax = Vector2.one;
-            fillRt.offsetMin = new Vector2(3, 3);
-            fillRt.offsetMax = new Vector2(-3, -3);
+            _fillRt = fillGo.GetComponent<RectTransform>();
             _fill = fillGo.AddComponent<Image>();
             _fill.color = new Color(0.18f, 0.8f, 0.44f);
-            _fill.type = Image.Type.Filled;
-            _fill.fillMethod = Image.FillMethod.Vertical;
-            _fill.fillOrigin = (int)Image.OriginVertical.Bottom;
-            _fill.fillAmount = 0.5f;
+            _fill.type = Image.Type.Simple;
+            ApplyFillHeight(0.5f);
 
-            // Threshold tick at 50% (area == soglia)
+            // Threshold at mid (A==S → 50%)
             var mark = Create("Thresh", barBg.transform);
             _threshMark = mark.GetComponent<RectTransform>();
             _threshMark.anchorMin = new Vector2(0f, 0.5f);
             _threshMark.anchorMax = new Vector2(1f, 0.5f);
             _threshMark.pivot = new Vector2(0.5f, 0.5f);
-            _threshMark.sizeDelta = new Vector2(8f, 3f);
+            _threshMark.sizeDelta = new Vector2(10f, 4f);
             _threshMark.anchoredPosition = Vector2.zero;
             mark.AddComponent<Image>().color = new Color(1f, 0.85f, 0.2f, 1f);
+            mark.transform.SetAsLastSibling();
 
             var threshLbl = CreateText(panel.transform, "soglia", 11, FontStyle.Normal, new Color(1f, 0.85f, 0.2f),
                 new Vector2(0.5f, 0.5f), new Vector2(42f, 20f), new Vector2(56, 18));
-            // place near mid of bar area
             var tl = threshLbl.rectTransform;
             tl.anchorMin = new Vector2(0.5f, 0.42f);
             tl.anchorMax = new Vector2(0.5f, 0.42f);
@@ -226,7 +298,6 @@ namespace Pupil.Bci
 
         static Font BuiltinUiFont()
         {
-            // Unity 6+: Arial.ttf removed — use LegacyRuntime.ttf
             var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             if (font == null)
                 font = Resources.GetBuiltinResource<Font>("Arial.ttf");
