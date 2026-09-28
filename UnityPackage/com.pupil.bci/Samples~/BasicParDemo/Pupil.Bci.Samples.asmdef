@@ -1,0 +1,17 @@
+{
+  "name": "Pupil.Bci.Samples",
+  "rootNamespace": "Pupil.Bci.Samples",
+  "references": [
+    "Pupil.Bci",
+    "UnityEngine.UI"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

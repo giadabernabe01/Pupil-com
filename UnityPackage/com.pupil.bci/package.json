@@ -1,0 +1,27 @@
+{
+  "name": "com.pupil.bci",
+  "version": "0.1.0",
+  "displayName": "Pupil BCI",
+  "description": "Gazepoint pupil area reader + constriction (PAR) detector for Unity games. Space Evaders and other titles subscribe to OnShortPar events.",
+  "unity": "2021.3",
+  "dependencies": {
+    "com.unity.ugui": "1.0.0"
+  },
+  "keywords": [
+    "bci",
+    "pupil",
+    "gazepoint",
+    "par",
+    "eye-tracking"
+  ],
+  "author": {
+    "name": "Pupil-com"
+  },
+  "samples": [
+    {
+      "displayName": "Basic PAR Demo",
+      "description": "Runtime bootstrap: Hub + signal bar + press counter (needs Gazepoint Control).",
+      "path": "Samples~/BasicParDemo"
+    }
+  ]
+}
