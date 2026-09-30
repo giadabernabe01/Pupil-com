@@ -153,7 +153,8 @@ namespace Pupil.Bci
                     }
                 }
 
-                // Do not poison baseline with constriction samples (keeps threshold stable)
+                // Same as Python: keep updating baseline during constriction
+                EnqueueCapped(_baseline, filtArea, _baselineMax);
             }
             else
             {

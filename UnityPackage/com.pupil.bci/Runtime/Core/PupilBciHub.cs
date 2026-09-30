@@ -28,7 +28,6 @@ namespace Pupil.Bci
         bool _baselineReady;
         float _baselineStart = -1f;
         float _validEyeSince = -1f;
-        float _shortCooldownUntil;
         bool _wasTrackingLost;
         bool _wasConnected;
         PupilBciPhase _phase = PupilBciPhase.Idle;
@@ -131,7 +130,6 @@ namespace Pupil.Bci
             _baselineReady = false;
             _baselineStart = -1f;
             _validEyeSince = -1f;
-            _shortCooldownUntil = 0f;
             _wasTrackingLost = false;
             _wasConnected = false;
             IsTrackingLost = false;
@@ -238,10 +236,10 @@ namespace Pupil.Bci
                 return;
 
             var s = _drain[_drain.Count - 1];
-            ProcessSample(s.Area, s.BpogX, s.BpogY);
+            ProcessSample(s.Area, s.BpogX, s.BpogY, s.PupilValid);
         }
 
-        void ProcessSample(float rawArea, float bx, float by)
+        void ProcessSample(float rawArea, float bx, float by, bool pupilValid)
         {
             RawArea = rawArea;
             BpogX = bx;
@@ -252,7 +250,9 @@ namespace Pupil.Bci
                 return;
 
             FilteredArea = filtered.Value;
-            var eyeOk = FilteredArea >= config.minValidArea && !_filter.AreaNotValid;
+            var eyeOk = pupilValid
+                && FilteredArea >= config.minValidArea
+                && !_filter.AreaNotValid;
 
             if (_filter.TimeoutTriggered)
             {
@@ -354,20 +354,24 @@ namespace Pupil.Bci
             if (_phase != PupilBciPhase.Ready)
                 SetPhase(PupilBciPhase.Ready, "Pronto — PAR attiva", "Lontano → vicino breve = azione.");
 
+            // Blink / eye-lost gate: do NOT treat disappearance as constriction.
+            // Abort any in-progress under-threshold timer so a blink cannot complete shortDur.
+            if (config.blockParWhenEyeInvalid && !eyeOk)
+            {
+                _detector.ResetMonitor();
+                Threshold = _detector.CurrentSmaThresh;
+                IsUnderThreshold = false;
+                EmitSample(0);
+                return;
+            }
+
             var status = _detector.Detect(FilteredArea);
             Threshold = _detector.CurrentSmaThresh;
             IsUnderThreshold = FilteredArea < Threshold && Threshold > 1e-6f;
 
             if (status == 1)
             {
-                // Require recovery above threshold before another short can fire
-                // (detector already locks; Hub cooldown reduces oscillation spam)
-                if (Time.unscaledTime < _shortCooldownUntil)
-                {
-                    EmitSample(0);
-                    return;
-                }
-                _shortCooldownUntil = Time.unscaledTime + Mathf.Max(0.5f, config.shortConstrDur + 1f);
+                // Same as Python: detector already blocks until recovery above threshold
                 if (logEvents) Debug.Log("[PupilBci] Short PAR");
                 OnShortPar?.Invoke();
                 unityEvents.OnShortPar?.Invoke();

@@ -9,6 +9,7 @@ namespace Pupil.Bci
     /// fill height follows area amplitude; green above threshold, red below.
     /// Persists across scenes/menus so it stays visible as a positioning aid.
     /// </summary>
+    [DefaultExecutionOrder(32000)]
     public sealed class PupilLiveSignalStrip : MonoBehaviour
     {
         static PupilLiveSignalStrip _instance;
@@ -30,6 +31,7 @@ namespace Pupil.Bci
         Text _hint;
         Text _state;
         Canvas _canvas;
+        PupilDigitalEyeView _eye;
         float _flashUntil;
         float _displayFill = 0.5f;
         int _pressCount;
@@ -61,8 +63,14 @@ namespace Pupil.Bci
         {
             if (hub == null)
                 hub = GetComponent<PupilBciHub>() ?? FindObjectOfType<PupilBciHub>();
-            if (buildUiIfMissing && _fillRt == null)
+            if (buildUiIfMissing && (_fillRt == null || _eye == null))
+            {
+                if (_canvas != null)
+                    Destroy(_canvas.gameObject);
+                _fillRt = null;
+                _eye = null;
                 BuildUi();
+            }
             EnsureCanvasOnTop();
             Subscribe();
             SceneManager.sceneLoaded -= OnSceneLoaded;
@@ -79,6 +87,8 @@ namespace Pupil.Bci
         {
             if (_instance == this)
                 _instance = null;
+            if (_canvas != null)
+                Destroy(_canvas.gameObject);
         }
 
         void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -100,10 +110,26 @@ namespace Pupil.Bci
         void EnsureCanvasOnTop()
         {
             if (_canvas == null) return;
-            // Above typical menu canvases so the aid stays visible.
-            if (_canvas.sortingOrder < 32000)
-                _canvas.sortingOrder = 32000;
-            transform.SetAsLastSibling();
+
+            // Nested under another Canvas → sorting is relative to parent and menus win.
+            // Keep as independent root Overlay so we always paint last.
+            if (_canvas.transform.parent != null)
+                _canvas.transform.SetParent(null, false);
+
+            if (persistAcrossScenes)
+                DontDestroyOnLoad(_canvas.gameObject);
+
+            _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            _canvas.overrideSorting = true;
+            _canvas.pixelPerfect = false;
+            _canvas.sortingOrder = short.MaxValue; // always above menu canvases
+
+            // Equal sortingOrder → last sibling among roots draws on top.
+            _canvas.transform.SetAsLastSibling();
+            if (!_canvas.gameObject.activeSelf)
+                _canvas.gameObject.SetActive(true);
+            if (!_canvas.enabled)
+                _canvas.enabled = true;
         }
 
         void Subscribe()
@@ -188,6 +214,15 @@ namespace Pupil.Bci
             if (_hint != null)
                 _hint.text = _under ? "↓ vicino" : "↑ lontano";
 
+            if (_eye != null)
+            {
+                bool ok = !s.TrackingLost
+                    && hub != null
+                    && hub.Phase != PupilBciPhase.WaitingForGazepoint
+                    && a > 1f;
+                _eye.UpdateEye(s.BpogX, s.BpogY, a, ok);
+            }
+
             if (!flash && _state != null && hub != null)
                 RefreshPhase(hub.Phase, hub.StatusMessage);
         }
@@ -203,44 +238,56 @@ namespace Pupil.Bci
 
         void BuildUi()
         {
+            // Root canvas (not child of Hub) so Overlay sorting is global vs menus.
             var canvasGo = new GameObject("PupilLiveSignalCanvas");
-            canvasGo.transform.SetParent(transform, false);
             _canvas = canvasGo.AddComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            _canvas.sortingOrder = 32000;
+            _canvas.overrideSorting = true;
+            _canvas.sortingOrder = short.MaxValue;
             var scaler = canvasGo.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920, 1080);
             canvasGo.AddComponent<GraphicRaycaster>();
+            if (persistAcrossScenes)
+                DontDestroyOnLoad(canvasGo);
 
             var panel = Create("Panel", canvasGo.transform);
             var prt = panel.GetComponent<RectTransform>();
             prt.anchorMin = new Vector2(1f, 0.5f);
             prt.anchorMax = new Vector2(1f, 0.5f);
             prt.pivot = new Vector2(1f, 0.5f);
-            prt.sizeDelta = new Vector2(stripWidth, stripHeight);
+            prt.sizeDelta = new Vector2(stripWidth, stripHeight + 110f);
             prt.anchoredPosition = new Vector2(-14f, 0f);
-            panel.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.12f, 0.92f);
+            var panelImg = panel.AddComponent<Image>();
+            panelImg.color = new Color(0.12f, 0.12f, 0.12f, 0.92f);
+            panelImg.raycastTarget = false;
 
             _title = CreateText(panel.transform, "PAR", 18, FontStyle.Bold, new Color(0.49f, 0.99f, 0f),
                 new Vector2(0.5f, 1f), new Vector2(0, -14), new Vector2(stripWidth - 16, 28));
 
+            // Digital eye (like Pupil-com) above the amplitude bar
+            _eye = panel.AddComponent<PupilDigitalEyeView>();
+            _eye.EnsureUi(panel.transform, new Vector2(0f, -52f), new Vector2(100f, 90f));
+
             _values = CreateText(panel.transform, "A —\nS —", 14, FontStyle.Normal, new Color(0.85f, 0.85f, 0.85f),
-                new Vector2(0.5f, 1f), new Vector2(0, -48), new Vector2(stripWidth - 16, 40));
+                new Vector2(0.5f, 1f), new Vector2(0, -150), new Vector2(stripWidth - 16, 40));
 
             var barBg = Create("BarBg", panel.transform);
             var bgRt = barBg.GetComponent<RectTransform>();
-            bgRt.anchorMin = new Vector2(0.5f, 0.12f);
-            bgRt.anchorMax = new Vector2(0.5f, 0.72f);
+            bgRt.anchorMin = new Vector2(0.5f, 0.08f);
+            bgRt.anchorMax = new Vector2(0.5f, 0.58f);
             bgRt.pivot = new Vector2(0.5f, 0.5f);
             bgRt.sizeDelta = new Vector2(36f, 0f);
-            barBg.AddComponent<Image>().color = new Color(0.22f, 0.22f, 0.22f, 1f);
+            var bgImg = barBg.AddComponent<Image>();
+            bgImg.color = new Color(0.22f, 0.22f, 0.22f, 1f);
+            bgImg.raycastTarget = false;
 
             var fillGo = Create("Fill", barBg.transform);
             _fillRt = fillGo.GetComponent<RectTransform>();
             _fill = fillGo.AddComponent<Image>();
             _fill.color = new Color(0.18f, 0.8f, 0.44f);
             _fill.type = Image.Type.Simple;
+            _fill.raycastTarget = false;
             ApplyFillHeight(0.5f);
 
             // Threshold at mid (A==S → 50%)
@@ -251,14 +298,16 @@ namespace Pupil.Bci
             _threshMark.pivot = new Vector2(0.5f, 0.5f);
             _threshMark.sizeDelta = new Vector2(10f, 4f);
             _threshMark.anchoredPosition = Vector2.zero;
-            mark.AddComponent<Image>().color = new Color(1f, 0.85f, 0.2f, 1f);
+            var markImg = mark.AddComponent<Image>();
+            markImg.color = new Color(1f, 0.85f, 0.2f, 1f);
+            markImg.raycastTarget = false;
             mark.transform.SetAsLastSibling();
 
             var threshLbl = CreateText(panel.transform, "soglia", 11, FontStyle.Normal, new Color(1f, 0.85f, 0.2f),
                 new Vector2(0.5f, 0.5f), new Vector2(42f, 20f), new Vector2(56, 18));
             var tl = threshLbl.rectTransform;
-            tl.anchorMin = new Vector2(0.5f, 0.42f);
-            tl.anchorMax = new Vector2(0.5f, 0.42f);
+            tl.anchorMin = new Vector2(0.5f, 0.33f);
+            tl.anchorMax = new Vector2(0.5f, 0.33f);
 
             _hint = CreateText(panel.transform, "↑ lontano\n↓ vicino", 12, FontStyle.Normal, new Color(0.65f, 0.65f, 0.65f),
                 new Vector2(0.5f, 0f), new Vector2(0, 70), new Vector2(stripWidth - 16, 36));
@@ -293,6 +342,7 @@ namespace Pupil.Bci
             t.text = msg;
             t.horizontalOverflow = HorizontalWrapMode.Wrap;
             t.verticalOverflow = VerticalWrapMode.Overflow;
+            t.raycastTarget = false;
             return t;
         }
 

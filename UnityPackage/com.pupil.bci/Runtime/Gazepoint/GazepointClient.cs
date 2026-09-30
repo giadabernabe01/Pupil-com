@@ -21,13 +21,16 @@ namespace Pupil.Bci
             public readonly float BpogX;
             public readonly float BpogY;
             public readonly bool Connected;
+            /// <summary>True when Gazepoint reports a valid pupil diameter (LPV/RPV).</summary>
+            public readonly bool PupilValid;
 
-            public Sample(float area, float bpogX, float bpogY, bool connected)
+            public Sample(float area, float bpogX, float bpogY, bool connected, bool pupilValid = true)
             {
                 Area = area;
                 BpogX = bpogX;
                 BpogY = bpogY;
                 Connected = connected;
+                PupilValid = pupilValid;
             }
         }
 
@@ -227,7 +230,7 @@ namespace Pupil.Bci
 
                         _connected = true;
                         _lastError = "";
-                        _queue.Enqueue(new Sample(0f, 0f, 0f, true));
+                        _queue.Enqueue(new Sample(0f, 0f, 0f, true, pupilValid: false));
                     }
                     catch (Exception e)
                     {
@@ -292,6 +295,7 @@ namespace Pupil.Bci
                 diameter = onlyR;
 
             float area = 0f;
+            bool pupilValid = diameter.HasValue;
             if (diameter.HasValue)
             {
                 var r = diameter.Value * 0.5f;
@@ -314,7 +318,7 @@ namespace Pupil.Bci
                 by = 0f;
             }
 
-            _queue.Enqueue(new Sample(area, bx, by, true));
+            _queue.Enqueue(new Sample(area, bx, by, true, pupilValid));
         }
 
         static bool TryParse(string s, out float v) =>

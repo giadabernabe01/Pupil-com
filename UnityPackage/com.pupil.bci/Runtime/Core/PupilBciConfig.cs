@@ -20,8 +20,8 @@ namespace Pupil.Bci
         [Range(0.5f, 1f)]
         public float threshold = 0.85f;
 
-        [Tooltip("Seconds under threshold before short PAR.")]
-        public float shortConstrDur = 0.2f;
+        [Tooltip("Seconds under threshold before short PAR. 0.25 balances blink rejection vs sensitivity.")]
+        public float shortConstrDur = 0.25f;
 
         [Tooltip("Seconds under threshold before long PAR (only if enableLongPar).")]
         public float longConstrDur = 3f;
@@ -33,9 +33,12 @@ namespace Pupil.Bci
 
         public bool enableExtraPar = false;
 
+        [Tooltip("If true, blinks / eye-lost (LPV=0) abort an in-progress constriction and never fire PAR.")]
+        public bool blockParWhenEyeInvalid = true;
+
         [Header("Tracking")]
-        [Tooltip("Seconds of invalid pupil area before OnTrackingLost.")]
-        public float trackingLostSec = 2f;
+        [Tooltip("Seconds of invalid pupil area before OnTrackingLost (Python AreaFilter uses 5s).")]
+        public float trackingLostSec = 5f;
 
         [Header("Connection / baseline setup")]
         [Tooltip("Seconds of valid pupil signal required before baseline starts.")]
