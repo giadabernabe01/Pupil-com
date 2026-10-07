@@ -32,6 +32,11 @@ namespace Pupil.Bci
         bool _wasConnected;
         PupilBciPhase _phase = PupilBciPhase.Idle;
 
+        // Short PAR confirm: wait briefly — if Gazepoint loses the eye (blink/close), cancel.
+        bool _pendingShortPar;
+        float _pendingShortParAt = -1f;
+        float _parRefractoryUntil = -1f;
+
         public event Action OnShortPar;
         public event Action OnLongPar;
         public event Action OnExtraPar;
@@ -40,6 +45,8 @@ namespace Pupil.Bci
         public event Action OnReady;
         public event Action<PupilBciPhase> OnPhaseChanged;
         public event Action<PupilSample> OnSample;
+        /// <summary>Research/diagnostics: kind + detail (discard reasons, cancels, EBF blinks).</summary>
+        public event Action<string, string> OnDiagnostic;
 
         public float FilteredArea { get; private set; }
         public float RawArea { get; private set; }
@@ -99,7 +106,10 @@ namespace Pupil.Bci
                 config.longConstrDur,
                 config.extraConstrDur,
                 config.enableLongPar,
-                config.enableExtraPar);
+                config.enableExtraPar,
+                config.dropInvalidRatioMax,
+                config.dropInvalidConsecMax,
+                config.refractoryAfterEbfSec);
         }
 
         void OnEnable()
@@ -133,6 +143,8 @@ namespace Pupil.Bci
             _wasTrackingLost = false;
             _wasConnected = false;
             IsTrackingLost = false;
+            CancelPendingShortPar();
+            _parRefractoryUntil = -1f;
 
             _client = new GazepointClient(config.host, config.port);
             _client.Start();
@@ -182,11 +194,32 @@ namespace Pupil.Bci
             _validEyeSince = -1f;
             IsTrackingLost = false;
             _wasTrackingLost = false;
+            CancelPendingShortPar();
+            _parRefractoryUntil = -1f;
             if (IsConnected)
                 SetPhase(PupilBciPhase.WaitingForValidEye,
                     "Segnale perso — riposiziona lo sguardo",
                     "Guarda dritto / lontano. Aspetta area pupilla valida.");
         }
+
+        public void AbortActiveConstriction()
+        {
+            _detector?.ResetMonitor();
+            CancelPendingShortPar();
+        }
+
+        void CancelPendingShortPar()
+        {
+            _pendingShortPar = false;
+            _pendingShortParAt = -1f;
+        }
+
+        /// <summary>
+        /// True when Gazepoint has lost the eye (closed / blink / out of frame).
+        /// That must NEVER count as pupillary constriction.
+        /// </summary>
+        static bool IsSignalLost(bool pupilValid, float rawArea, bool areaNotValid) =>
+            !pupilValid || rawArea <= 1e-3f || areaNotValid;
 
         void Update()
         {
@@ -233,10 +266,19 @@ namespace Pupil.Bci
             _drain.Clear();
             _client.Drain(_drain);
             if (_drain.Count == 0)
+            {
+                // Still resolve a deferred short PAR if eye stayed valid.
+                TryConfirmPendingShortPar(signalLost: false);
                 return;
+            }
 
-            var s = _drain[_drain.Count - 1];
-            ProcessSample(s.Area, s.BpogX, s.BpogY, s.PupilValid);
+            // Process every sample in order so a mid-queue signal-loss aborts
+            // before a later sample could complete shortDur.
+            for (var i = 0; i < _drain.Count; i++)
+            {
+                var s = _drain[i];
+                ProcessSample(s.Area, s.BpogX, s.BpogY, s.PupilValid);
+            }
         }
 
         void ProcessSample(float rawArea, float bx, float by, bool pupilValid)
@@ -250,9 +292,21 @@ namespace Pupil.Bci
                 return;
 
             FilteredArea = filtered.Value;
-            var eyeOk = pupilValid
-                && FilteredArea >= config.minValidArea
-                && !_filter.AreaNotValid;
+
+            // Mitigation #4: EBF blink suppress → detector refractory (constriction.py)
+            if (_filter.EbfBlinkSuppressed)
+            {
+                EmitDiagnostic("ebf_blink", "AreaFilter ha soppresso uno spike (blink)");
+                _detector.NotifyEbfBlink();
+                if (!string.IsNullOrEmpty(_detector.LastDiscardReason))
+                    EmitDiagnostic("discard_ebf", _detector.LastDiscardReason);
+            }
+
+            // Hard rule: no Gazepoint pupil lock ⇒ not a constriction (blink / eyes closed).
+            bool signalLost = IsSignalLost(pupilValid, rawArea, _filter.AreaNotValid);
+            bool rawValid = pupilValid && rawArea > 1e-3f && rawArea >= config.minValidArea;
+            var eyeOk = !signalLost
+                && FilteredArea >= config.minValidArea;
 
             if (_filter.TimeoutTriggered)
             {
@@ -260,6 +314,7 @@ namespace Pupil.Bci
                 {
                     _wasTrackingLost = true;
                     IsTrackingLost = true;
+                    AbortOnSignalLost();
                     SetPhase(PupilBciPhase.TrackingLost,
                         "Occhio non rilevato",
                         "Controlla inquadratura e luce, poi resta fermo.");
@@ -274,6 +329,7 @@ namespace Pupil.Bci
                 _baselineStart = -1f;
                 _validEyeSince = -1f;
                 _detector.ClearBaseline();
+                CancelPendingShortPar();
                 SetPhase(PupilBciPhase.WaitingForValidEye,
                     "Segnale tornato — riparti setup",
                     "Guarda LONTANO per la nuova baseline.");
@@ -291,6 +347,7 @@ namespace Pupil.Bci
             // --- SETUP: need stable valid eye before baseline ---
             if (!_baselineReady)
             {
+                CancelPendingShortPar();
                 if (!eyeOk)
                 {
                     _validEyeSince = -1f;
@@ -354,42 +411,125 @@ namespace Pupil.Bci
             if (_phase != PupilBciPhase.Ready)
                 SetPhase(PupilBciPhase.Ready, "Pronto — PAR attiva", "Lontano → vicino breve = azione.");
 
-            // Blink / eye-lost gate: do NOT treat disappearance as constriction.
-            // Abort any in-progress under-threshold timer so a blink cannot complete shortDur.
-            if (config.blockParWhenEyeInvalid && !eyeOk)
+            Threshold = _detector.CurrentSmaThresh;
+            float baselineSma = (config.threshold > 1e-6f && Threshold > 1e-6f)
+                ? Threshold / config.threshold
+                : 0f;
+            float closedFrac = Mathf.Clamp(config.eyeClosedFraction, 0.15f, 0.7f);
+            bool eyeClosedDeep = baselineSma > 1e-3f
+                && (FilteredArea < baselineSma * closedFrac || rawArea < baselineSma * closedFrac);
+
+            // Deep collapse (eyelid) while samples still look "valid" — Unity-only gate.
+            if (config.blockParWhenEyeInvalid && eyeClosedDeep)
             {
-                _detector.ResetMonitor();
-                Threshold = _detector.CurrentSmaThresh;
+                AbortOnSignalLost("eye_closed_deep", "calo area troppo profondo (palpebra?)");
                 IsUnderThreshold = false;
                 EmitSample(0);
                 return;
             }
 
-            var status = _detector.Detect(FilteredArea);
+            // If a deferred short PAR is waiting and the eye lock dies → cancel emit.
+            if (config.blockParWhenEyeInvalid && signalLost && _pendingShortPar)
+                AbortOnSignalLost("short_par_cancelled", "segnale perso durante conferma short PAR");
+
+            // After a hard abort, ignore PAR briefly while the eye returns.
+            if (Time.realtimeSinceStartup < _parRefractoryUntil)
+            {
+                _detector.ResetMonitor();
+                IsUnderThreshold = false;
+                EmitSample(0);
+                return;
+            }
+
+            // constriction.py path: feed detector with rawValid so #3 can cancel blink drops.
+            // Do NOT ResetMonitor on every invalid frame — that would skip the invalid ratio logic.
+            bool sampleRawValid = config.blockParWhenEyeInvalid ? rawValid && !signalLost : true;
+            var status = _detector.Detect(FilteredArea, sampleRawValid);
             Threshold = _detector.CurrentSmaThresh;
             IsUnderThreshold = FilteredArea < Threshold && Threshold > 1e-6f;
 
+            if (status == 0 && !string.IsNullOrEmpty(_detector.LastDiscardReason))
+            {
+                string kind = _detector.LastDiscardReason.IndexOf("EBF", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? "discard_ebf"
+                    : "discard_tracking";
+                EmitDiagnostic(kind, _detector.LastDiscardReason);
+                if (logEvents)
+                    Debug.Log("[PupilBci] " + _detector.LastDiscardReason);
+            }
+
+            // Never emit PAR on a frame where Gazepoint lost the eye.
+            if (config.blockParWhenEyeInvalid && signalLost)
+                status = 0;
+
             if (status == 1)
             {
-                // Same as Python: detector already blocks until recovery above threshold
-                if (logEvents) Debug.Log("[PupilBci] Short PAR");
-                OnShortPar?.Invoke();
-                unityEvents.OnShortPar?.Invoke();
+                // Extra Hub safety: if signal is lost within confirm window, cancel.
+                _pendingShortPar = true;
+                _pendingShortParAt = Time.realtimeSinceStartup + Mathf.Max(0.03f, config.shortParConfirmSec);
+                EmitDiagnostic("short_par_candidate", "sotto soglia per shortDur — in conferma");
+                if (logEvents)
+                    Debug.Log("[PupilBci] Short PAR candidate — confirming…");
             }
             else if (status == 2)
             {
                 if (logEvents) Debug.Log("[PupilBci] Long PAR");
+                EmitDiagnostic("long_par", "long constriction");
                 OnLongPar?.Invoke();
                 unityEvents.OnLongPar?.Invoke();
             }
             else if (status == 3)
             {
                 if (logEvents) Debug.Log("[PupilBci] Extra PAR");
+                EmitDiagnostic("extra_par", "extra-long constriction");
                 OnExtraPar?.Invoke();
                 unityEvents.OnExtraPar?.Invoke();
             }
 
-            EmitSample(status);
+            TryConfirmPendingShortPar(signalLost: false);
+            EmitSample(_pendingShortPar ? 0 : status);
+        }
+
+        void AbortOnSignalLost(string kind = "signal_loss_abort", string detail = null)
+        {
+            bool hadPending = _pendingShortPar;
+            _detector?.ResetMonitor();
+            if (hadPending && logEvents)
+                Debug.Log("[PupilBci] Short PAR cancelled — Gazepoint lost eye (blink/close).");
+            CancelPendingShortPar();
+            // Block new PAR until the eye is stably back
+            _parRefractoryUntil = Time.realtimeSinceStartup + Mathf.Max(0.05f, config.afterSignalLostRefractorySec);
+            EmitDiagnostic(
+                hadPending ? "short_par_cancelled" : kind,
+                detail ?? (hadPending
+                    ? "short PAR annullato: perdita segnale"
+                    : "abort per perdita segnale / occhio chiuso"));
+        }
+
+        void TryConfirmPendingShortPar(bool signalLost)
+        {
+            if (!_pendingShortPar)
+                return;
+            if (signalLost)
+            {
+                AbortOnSignalLost("short_par_cancelled", "segnale perso durante conferma short PAR");
+                return;
+            }
+            if (Time.realtimeSinceStartup < _pendingShortParAt)
+                return;
+
+            _pendingShortPar = false;
+            _pendingShortParAt = -1f;
+            if (logEvents) Debug.Log("[PupilBci] Short PAR confirmed");
+            EmitDiagnostic("short_par", "short constriction confermata");
+            OnShortPar?.Invoke();
+            unityEvents.OnShortPar?.Invoke();
+        }
+
+        void EmitDiagnostic(string kind, string detail)
+        {
+            if (string.IsNullOrEmpty(kind)) return;
+            OnDiagnostic?.Invoke(kind, detail ?? "");
         }
 
         void SetPhase(PupilBciPhase phase, string status, string hint)

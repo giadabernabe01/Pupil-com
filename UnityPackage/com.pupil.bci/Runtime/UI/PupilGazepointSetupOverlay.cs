@@ -4,7 +4,8 @@ using UnityEngine;
 namespace Pupil.Bci
 {
     /// <summary>
-    /// Setup coach: keep Gazepoint in front (windowed) until eye is tracked / Ready.
+    /// Setup coach for Gazepoint. Can be dismissed so the app stays fully usable
+    /// with keyboard/mouse when no eye-tracker is present (development).
     /// </summary>
     public sealed class PupilGazepointSetupOverlay : MonoBehaviour
     {
@@ -16,12 +17,26 @@ namespace Pupil.Bci
         [SerializeField] float autoLaunchAfterSeconds = 1.2f;
         [SerializeField] float reconnectAfterLaunchSeconds = 2.5f;
         [SerializeField] float refocusWhileWaitingEvery = 2.0f;
+        [Tooltip("Allow dismissing the overlay and using the app with keyboard/mouse only.")]
+        [SerializeField] bool allowContinueWithoutDevice = true;
+        [Tooltip("After this many seconds without a good link, stop stealing window focus.")]
+        [SerializeField] float stopFocusStealAfterSec = 4f;
 
         string _launchFeedback = "";
         float _feedbackUntil;
         bool _autoLaunchTried;
         float _nextRefocus;
+        float _enabledAt;
+        bool _dismissed;
         Coroutine _reconnectCo;
+
+        public bool IsDismissed => _dismissed;
+
+        public void Dismiss()
+        {
+            _dismissed = true;
+            Debug.Log("[PupilBci] Setup overlay dismissed — app usable without Gazepoint.");
+        }
 
         void OnEnable()
         {
@@ -29,6 +44,8 @@ namespace Pupil.Bci
                 hub = GetComponent<PupilBciHub>() ?? FindObjectOfType<PupilBciHub>();
             _autoLaunchTried = false;
             _nextRefocus = 0f;
+            _enabledAt = Time.unscaledTime;
+            _dismissed = false;
         }
 
         void OnDisable()
@@ -42,9 +59,8 @@ namespace Pupil.Bci
 
         void Update()
         {
-            if (hub == null) return;
+            if (hub == null || _dismissed) return;
 
-            // Auto-open Gazepoint if missing
             if (autoLaunchOnce && !_autoLaunchTried
                 && hub.Phase == PupilBciPhase.WaitingForGazepoint
                 && !hub.GazepointProcessRunning
@@ -54,9 +70,10 @@ namespace Pupil.Bci
                 TryLaunchAndFocus();
             }
 
-            // Keep Gazepoint in front until eye is good / Ready
-            if (hub.Phase == PupilBciPhase.WaitingForGazepoint
-                || hub.Phase == PupilBciPhase.WaitingForValidEye)
+            bool waiting = hub.Phase == PupilBciPhase.WaitingForGazepoint
+                           || hub.Phase == PupilBciPhase.WaitingForValidEye;
+            bool focusOk = Time.unscaledTime - _enabledAt < Mathf.Max(1f, stopFocusStealAfterSec);
+            if (waiting && focusOk && hub.GazepointProcessRunning)
             {
                 if (Time.unscaledTime >= _nextRefocus)
                 {
@@ -68,18 +85,17 @@ namespace Pupil.Bci
 
         void OnGUI()
         {
-            if (hub == null) return;
+            if (hub == null || _dismissed) return;
             if (hideWhenReady && hub.IsReady) return;
 
             var phase = hub.Phase;
             if (phase == PupilBciPhase.Ready || phase == PupilBciPhase.Idle)
                 return;
-            // TrackingLost uses dedicated pause overlay
             if (phase == PupilBciPhase.TrackingLost)
                 return;
 
             float w = Mathf.Min(560f, Screen.width - 40f);
-            float h = 300f;
+            float h = allowContinueWithoutDevice ? 340f : 300f;
             var r = new Rect((Screen.width - w) * 0.5f, 24f, w, h);
             GUI.Box(r, "Setup Gazepoint / Pupil BCI");
 
@@ -93,7 +109,7 @@ namespace Pupil.Bci
             GUILayout.Label(
                 hub.GazepointProcessRunning
                     ? "Gazepoint: aperto — posiziona l'occhio fino a segnale stabile"
-                    : "Gazepoint: NON aperto — lo avvio in finestra");
+                    : "Gazepoint: NON aperto — puoi continuare comunque con tastiera/mouse");
 
             if (Time.unscaledTime < _feedbackUntil && !string.IsNullOrEmpty(_launchFeedback))
             {
@@ -108,6 +124,13 @@ namespace Pupil.Bci
             if (GUILayout.Button("Apri Gazepoint (finestra)", GUILayout.Height(36)))
                 TryLaunchAndFocus();
             GUILayout.EndHorizontal();
+
+            if (allowContinueWithoutDevice)
+            {
+                GUILayout.Space(8);
+                if (GUILayout.Button("Continua senza Gazepoint (tastiera/mouse)", GUILayout.Height(40)))
+                    Dismiss();
+            }
 
             GUILayout.EndArea();
         }
@@ -125,7 +148,7 @@ namespace Pupil.Bci
             }
             else
             {
-                _launchFeedback = err ?? "Avvio/focus fallito.";
+                _launchFeedback = err ?? "Avvio/focus fallito — usa Continua senza Gazepoint.";
                 _feedbackUntil = Time.unscaledTime + 8f;
                 Debug.LogWarning("[PupilBci] " + _launchFeedback);
             }
@@ -134,7 +157,7 @@ namespace Pupil.Bci
         IEnumerator ReconnectAfterLaunch()
         {
             yield return new WaitForSecondsRealtime(Mathf.Max(1f, reconnectAfterLaunchSeconds));
-            if (hub != null)
+            if (hub != null && !_dismissed)
             {
                 hub.FocusGazepointWindow(maximize: maximizeGazepoint);
                 hub.RetryConnection();

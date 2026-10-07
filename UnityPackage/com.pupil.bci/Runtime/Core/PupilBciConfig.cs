@@ -20,8 +20,8 @@ namespace Pupil.Bci
         [Range(0.5f, 1f)]
         public float threshold = 0.85f;
 
-        [Tooltip("Seconds under threshold before short PAR. 0.25 balances blink rejection vs sensitivity.")]
-        public float shortConstrDur = 0.25f;
+        [Tooltip("Seconds under threshold before short PAR. ~0.3s keeps responsiveness; blinks still cancelled by signal-loss confirm.")]
+        public float shortConstrDur = 0.3f;
 
         [Tooltip("Seconds under threshold before long PAR (only if enableLongPar).")]
         public float longConstrDur = 3f;
@@ -35,6 +35,27 @@ namespace Pupil.Bci
 
         [Tooltip("If true, blinks / eye-lost (LPV=0) abort an in-progress constriction and never fire PAR.")]
         public bool blockParWhenEyeInvalid = true;
+
+        [Tooltip("If filtered area falls below this fraction of baseline SMA, treat as eye closed (not PAR). Intentional near-focus stays above ~0.5–0.7.")]
+        [Range(0.15f, 0.7f)]
+        public float eyeClosedFraction = 0.45f;
+
+        [Header("Anti false-positive (constriction.py #3 / #4)")]
+        [Tooltip("During a drop: cancel if invalid-frame ratio exceeds this (mitigation #3).")]
+        [Range(0.15f, 0.8f)]
+        public float dropInvalidRatioMax = 0.35f;
+
+        [Tooltip("During a drop: cancel after this many consecutive invalid samples (~0.2s @ 60Hz).")]
+        public int dropInvalidConsecMax = 12;
+
+        [Tooltip("After AreaFilter EBF blink suppress, block new PAR for this many seconds (mitigation #4).")]
+        public float refractoryAfterEbfSec = 0.35f;
+
+        [Tooltip("After a short-PAR candidate, wait this long; if Gazepoint loses the eye (blink/close), cancel the PAR.")]
+        public float shortParConfirmSec = 0.1f;
+
+        [Tooltip("After hard signal loss, block new PAR briefly (Hub gate; in addition to EBF refractory).")]
+        public float afterSignalLostRefractorySec = 0.1f;
 
         [Header("Tracking")]
         [Tooltip("Seconds of invalid pupil area before OnTrackingLost (Python AreaFilter uses 5s).")]

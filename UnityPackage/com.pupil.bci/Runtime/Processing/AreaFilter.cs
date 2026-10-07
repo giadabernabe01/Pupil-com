@@ -26,6 +26,8 @@ namespace Pupil.Bci
 
         public bool TimeoutTriggered { get; private set; }
         public bool AreaNotValid => _areaNotValid;
+        /// <summary>True this frame when EBF held the previous value (blink spike suppress).</summary>
+        public bool EbfBlinkSuppressed { get; private set; }
 
         public AreaFilter(int fps = 60, float timeoutSec = 5f)
         {
@@ -40,6 +42,7 @@ namespace Pupil.Bci
 
         public float? Filter(float newArea)
         {
+            EbfBlinkSuppressed = false;
             EnqueueCapped(_raw, newArea, _maxArrayLen);
 
             if (_amin <= newArea && newArea <= _amax)
@@ -105,9 +108,10 @@ namespace Pupil.Bci
                         var maxRejects = (int)(_fps * 0.8f);
                         if (_rejectCount < maxRejects)
                         {
-                            // Hold previous EBF value
+                            // Short spike/blink: reject and hold old value
                             ReplaceLast(_ebf, ebfArr[ebfArr.Length - 2]);
                             ReplaceLast(_diffs, baseline);
+                            EbfBlinkSuppressed = true;
                         }
                         else
                         {
@@ -151,6 +155,7 @@ namespace Pupil.Bci
             _areaNotValidTime = 0.0;
             TimeoutTriggered = false;
             _rejectCount = 0;
+            EbfBlinkSuppressed = false;
         }
 
         static double Now() =>

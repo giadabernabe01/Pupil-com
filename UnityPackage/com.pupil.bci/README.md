@@ -2,41 +2,25 @@
 
 Unity package: **Gazepoint → filter → pupil constriction (PAR) → C# events**.
 
-Scope is intentionally small — not a port of the full Pupil-com PyQt app.
+This package is **BCI only** (connection + detection + live bar helpers).  
+The full Pupil-com app (menu / training / sì-no / tastiera) lives in the Unity project as **scenes** — see `UnityPupilComApp/` in this repo.
 
-## Install in a Unity project
+## Install
 
-1. Open **Window → Package Manager**
-2. **+ → Add package from disk…**
-3. Select this folder’s `package.json`:
-   `…/Pupil-com/UnityPackage/com.pupil.bci/package.json`
-4. Add an empty GameObject, attach **Pupil Bci Hub**, assign a **Pupil Bci Config** asset (Create → Pupil BCI → Config).
+1. Package Manager → **+ → Add package from disk…**
+2. Select `UnityPackage/com.pupil.bci/package.json`
+3. Add **Pupil Bci Hub** (+ Config) to a GameObject, or let the app session create it.
 
-## Public API (`PupilBciHub`)
+## API (`PupilBciHub`)
 
 | Member | Meaning |
 |--------|---------|
-| `OnShortPar` | Short constriction (game “press”) |
-| `OnLongPar` | Long constriction (off by default) |
+| `OnShortPar` | Short constriction |
+| `OnLongPar` | Long constriction (off by default in Config) |
 | `OnTrackingLost` / `OnTrackingOk` | Signal timeout / recovery |
-| `OnSample` | Every processed frame (area, threshold, …) |
-| `FilteredArea`, `Threshold`, `IsUnderThreshold` | Live values |
-
-## Wire Space Evaders
-
-Replace UDP `press` listeners with:
-
-```csharp
-hub.OnShortPar += () => { /* same as former UDP press */ };
-```
-
-See `Runtime/Integration/PupilBciActionBridge.cs` for a drop-in pattern, and `Samples~/BasicParDemo/`.
+| `OnSample` | Live area / threshold |
+| `TryOpenGazepoint` / `FocusGazepointWindow` | Launch / focus Gazepoint |
 
 ## Requirements
 
-- Gazepoint Control running, TCP `127.0.0.1:4242`
-- ENABLE pupil + BPOG streams (the client sends SET commands on connect)
-
-## Not included
-
-Training UI, keyboard, Shuttle, Drive upload, Pupil Labs Core.
+- Windows + Gazepoint Control on `127.0.0.1:4242`
